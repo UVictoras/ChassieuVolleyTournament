@@ -4,6 +4,8 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Collections.Generic;
+using System.IO;
 
 namespace ChassieuVolleyTournament
 {
@@ -20,24 +22,28 @@ namespace ChassieuVolleyTournament
 
     static class Program
     {
+        static HashSet<string> validKeys = new HashSet<string> { "abc123", "volley2025", "secret" };
+
         [STAThread]
         static void Main()
         {
             Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
 
-            var window1 = new LocalDisplay1();
-            window1.Size = new Size(1920, 1080);
-            window1.Icon = new Icon("../../Images/ChassieuLogo.ico");
+            var window1 = new LocalDisplay1()
+            {
+                Size = new Size(1920, 1080),
+                Icon = new Icon("../../Images/ChassieuLogo.ico")
+            };
 
-            var window2 = new LocalDisplay2();
-            window2.Size = new Size(1920, 1080);
-            window2.Icon = new Icon("../../Images/ChassieuLogo.ico");
+            var window2 = new LocalDisplay2()
+            {
+                Size = new Size(1920, 1080),
+                Icon = new Icon("../../Images/ChassieuLogo.ico")
+            };
 
             window1.Show();
             window2.Show();
 
-            // Run web server in background
             Task.Run(() => StartWebServer());
 
             Application.Run();
@@ -54,15 +60,54 @@ namespace ChassieuVolleyTournament
             while (true)
             {
                 HttpListenerContext context = await listener.GetContextAsync();
+                HttpListenerRequest request = context.Request;
                 HttpListenerResponse response = context.Response;
 
-                string html = @"<html><body><h1>Hello from the server!</h1><p>Data goes here.</p></body></html>";
-                byte[] buffer = Encoding.UTF8.GetBytes(html);
+                if (request.HttpMethod == "POST")
+                {
+                    var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+                    string body = await reader.ReadToEndAsync();
 
-                response.ContentLength64 = buffer.Length;
-                response.ContentType = "text/html";
-                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-                response.Close();
+                    string key = Uri.UnescapeDataString(body).Replace("key=", "").Trim();
+                    bool isValid = validKeys.Contains(key);
+
+                    // Simple HTML result per user
+                    string htmlResponse = $@"<!DOCTYPE html>
+                    <html>
+                    <head><meta charset='utf-8'></head>
+                    <body style='font-family:Arial;text-align:center;margin-top:50px;'>
+                        <h2>{(isValid ? "✅ Clé valide" : "❌ Clé invalide")}</h2>
+                        <a href='/'>Retour</a>
+                    </body>
+                    </html>";
+
+                    byte[] buffer = Encoding.UTF8.GetBytes(htmlResponse);
+                    response.ContentType = "text/html";
+                    response.ContentLength64 = buffer.Length;
+
+                    await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                    response.OutputStream.Close();
+                }
+                else
+                {
+                    string html = @"<!DOCTYPE html>
+                    <html>
+                    <head><meta charset='utf-8'></head>
+                    <body>
+                        <form method='post'>
+                            <input name='key' placeholder='Entrer la clé' />
+                            <button type='submit'>Valider</button>
+                        </form>
+                    </body>
+                    </html>";
+                    byte[] buffer = Encoding.UTF8.GetBytes(html);
+                    response.ContentType = "text/html";
+                    response.ContentLength64 = buffer.Length;
+
+                    await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                    response.OutputStream.Close();
+                }
+
             }
         }
     }
