@@ -6,47 +6,64 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Collections.Generic;
 using System.IO;
+using System.Diagnostics;
 
 namespace ChassieuVolleyTournament
 {
     //IP : 192.168.1.144
-    class LocalDisplay1 : Form
-    {
-        public LocalDisplay1() => Text = "Tournoi de Chassieu Volley";
-    }
-
-    class LocalDisplay2 : Form
-    {
-        public LocalDisplay2() => Text = "Infos privées du tournoi";
-    }
 
     static class Program
     {
         static HashSet<string> validKeys = new HashSet<string> { "abc123", "volley2025", "secret" };
+
+        public static DisplayWindow window1;
+        public static StaffWindow window2;
+
+        private static Timer timer;
 
         [STAThread]
         static void Main()
         {
             Application.EnableVisualStyles();
 
-            var window1 = new LocalDisplay1()
-            {
-                Size = new Size(1920, 1080),
-                Icon = new Icon("../../Images/ChassieuLogo.ico")
-            };
+            window1 = new DisplayWindow();
 
-            var window2 = new LocalDisplay2()
-            {
-                Size = new Size(1920, 1080),
-                Icon = new Icon("../../Images/ChassieuLogo.ico")
-            };
+            window2 = new StaffWindow();
+
+            timer = new Timer();
 
             window1.Show();
             window2.Show();
 
+            Task.Run(() => MainLoop());
             Task.Run(() => StartWebServer());
 
             Application.Run();
+        }
+
+        public static async Task MainLoop()
+        {
+            Stopwatch stopwatch = new Stopwatch();
+            stopwatch.Start();
+            long lastTime = stopwatch.ElapsedMilliseconds;
+
+            timer.StartTimer(true);
+
+            while (true)
+            {
+                long currentTime = stopwatch.ElapsedMilliseconds;
+                float deltaTime = (currentTime - lastTime) / 1000f; // deltaTime in seconds
+                lastTime = currentTime;
+
+                if (!timer.GetTimerIsEnabled())
+                    return;
+
+                timer.DecrementTimer(deltaTime);
+                window1.Invoke((MethodInvoker)delegate {
+                    window1.SetTimerText(timer.GetCurrentTime()); // replace with your real time
+                });
+
+            }
         }
 
         static async Task StartWebServer()
