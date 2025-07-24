@@ -56,13 +56,19 @@
       <DependentUpon>Form1.cs</DependentUpon>
     </Compile>
     <Compile Include="Match.cs" />
+    <Compile Include="Phase.cs" />
     <Compile Include="Pool.cs" />
+    <Compile Include="PoolPhase.cs" />
+    <Compile Include="PrivateKeyGenerator.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RefereeWebServer.cs" />
     <Compile Include="StaffWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Team.cs" />
+    <Compile Include="Tournament.cs" />
+    <Compile Include="TreePhase.cs" />
     <Compile Include="Utilitaries.cs">
       <SubType>Component</SubType>
     </Compile>

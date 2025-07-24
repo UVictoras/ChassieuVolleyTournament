@@ -8,12 +8,12 @@ using System.Windows.Forms;
 
 namespace ChassieuVolleyTournament
 {
-    struct TeamStatistics
+    public struct TeamStatistics
     {
-        int TournamentPoints;
-        int ScoredPoints;
-        int TakenPoints;
-        int Difference;
+        public int TournamentPoints;
+        public int ScoredPoints;
+        public int TakenPoints;
+        public int Difference;
     }
 
     public class RoundedPanel : Panel

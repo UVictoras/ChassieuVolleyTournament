@@ -1,40 +1,40 @@
 ﻿using System;
 using System.Drawing;
-using System.Drawing.Drawing2D;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace ChassieuVolleyTournament
 {
-    internal class DisplayWindow : Form
+    public class DisplayWindow : Form
     {
-        private Label timerText;
-        private Label timerValue;
+        private Label timerText, timerValue;
         private PictureBox logo;
-
-        // Now using jagged array to store labels for easy modification
-        // Each court has: 0 = top team label, 1 = bottom team label, 2 = top score label, 3 = bottom score label
+        private Panel[] matchPanels = new Panel[3];
         private Label[][] courtLabels = new Label[3][];
+        private Panel[] rankingPanels = new Panel[4]; // Added explicit references for ranking panels
 
         public DisplayWindow()
         {
-            InitializeWindow();
+            Text = "Chassieu Volley Tournament Display";
+            WindowState = FormWindowState.Maximized;
+            StartPosition = FormStartPosition.CenterScreen;
+            BackColor = Color.FromArgb(0, 38, 84);
+            Icon = new Icon("../../Images/ChassieuLogo.ico");
+
+            Shown += (s, e) => BeginInvoke(new Action(FinalizeLayout));
         }
 
-        private void InitializeWindow()
+        private void FinalizeLayout()
         {
-            Text = "Chassieu Volley Tournament Display";
-            Icon = new Icon("../../Images/ChassieuLogo.ico");
-            WindowState = FormWindowState.Maximized;
-            BackColor = Color.FromArgb(0, 38, 84);
-
-            Font defaultFont = new Font("Segoe UI", 14, FontStyle.Bold);
-            Font timerFont = new Font("Consolas", 42, FontStyle.Bold);
+            // Timer and logo
+            var df = new Font("Segoe UI", 14, FontStyle.Bold);
+            var tf = new Font("Consolas", 42, FontStyle.Bold);
 
             timerText = new Label
             {
                 Text = "TEMPS RESTANT :",
                 ForeColor = Color.White,
-                Font = defaultFont,
+                Font = df,
                 AutoSize = true
             };
             Controls.Add(timerText);
@@ -42,10 +42,10 @@ namespace ChassieuVolleyTournament
             timerValue = new Label
             {
                 Text = "05:16",
+                Font = tf,
                 ForeColor = Color.Red,
                 BackColor = Color.Black,
                 BorderStyle = BorderStyle.Fixed3D,
-                Font = timerFont,
                 AutoSize = true
             };
             Controls.Add(timerValue);
@@ -58,25 +58,31 @@ namespace ChassieuVolleyTournament
             };
             Controls.Add(logo);
 
-            // Create the 3 courts
+            // Courts + matches
             for (int i = 0; i < 3; i++)
             {
                 int x = 200 + i * 400;
-                Controls.Add(CreateMatchPanel(x + 30, 200));
+                var mp = CreateMatchPanel(x + 30, 200);
+                matchPanels[i] = mp;
+                Controls.Add(mp);
                 Controls.Add(CreateCourtPanel(x, 320, i));
             }
 
+            // Control buttons
             Controls.Add(CreateStyledButton("MATCHS", 30, 300));
             Controls.Add(CreateStyledButton("CLASSEMENT", 30, 710));
 
-            string[] poules = { "POULE 1", "POULE 2", "POULE 3", "POULE VOLANTE" };
-            for (int i = 0; i < 4; i++)
+            // Ranking panels
+            string[] titles = { "POULE 1", "POULE 2", "POULE 3", "POULE VOLANTE" };
+            for (int i = 0; i < titles.Length; i++)
             {
-                int x = 150 + i * 350;
-                Controls.Add(CreateRankingPanel(x, 700, poules[i]));
+                var rp = CreateRankingPanel(150 + i * 350, 700, titles[i]);
+                rankingPanels[i] = rp;
+                Controls.Add(rp);
             }
 
-            this.Layout += (s, e) =>
+            // Center timer and logo
+            Layout += (s, e) =>
             {
                 timerText.Location = new Point((ClientSize.Width - timerText.Width) / 2, 20);
                 timerValue.Location = new Point((ClientSize.Width - timerValue.Width) / 2, 60);
@@ -86,92 +92,61 @@ namespace ChassieuVolleyTournament
 
         private Panel CreateMatchPanel(int x, int y)
         {
-            Panel panel = new Panel
+            var p = new Panel
             {
                 Location = new Point(x, y),
                 Size = new Size(200, 80),
                 BackColor = Color.FromArgb(0, 51, 102),
                 BorderStyle = BorderStyle.FixedSingle
             };
-
-            Label lbl = new Label
+            var lbl = new Label
             {
-                Text = "PROCHAIN MATCH\nÉQUIPE 1 VS ÉQUIPE 2\n📢 ARBITRE",
                 Dock = DockStyle.Fill,
+                Text = "PROCHAIN MATCH\nÉQUIPE 1 VS ÉQUIPE 2\n📢 ARBITRE",
                 Font = new Font("Segoe UI", 10, FontStyle.Bold),
                 ForeColor = Color.White,
                 TextAlign = ContentAlignment.MiddleCenter
             };
-            panel.Controls.Add(lbl);
-            return panel;
+            p.Controls.Add(lbl);
+            return p;
         }
 
-        private Panel CreateCourtPanel(int x, int y, int index)
+        private Panel CreateCourtPanel(int x, int y, int idx)
         {
-            Panel courtPanel = new Panel
+            var hp = new Panel
             {
                 Location = new Point(x, y),
                 Size = new Size(200, 300),
-                BackgroundImage = Image.FromFile("../../Images/VolleyballField.jpg"),  
+                BackgroundImage = Image.FromFile("../../Images/VolleyballField.jpg"),
                 BackgroundImageLayout = ImageLayout.Stretch,
                 BorderStyle = BorderStyle.FixedSingle
             };
 
-            Label topLabel = new Label
-            {
-                Text = "ÉQUIPE 1",
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.Transparent, 
-                Location = new Point(60, 10),
-                AutoSize = true
-            };
-            courtPanel.Controls.Add(topLabel);
-
-            Label bottomLabel = new Label
-            {
-                Text = "ÉQUIPE 2",
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.Transparent,
-                Location = new Point(60, 260),
-                AutoSize = true
-            };
-            courtPanel.Controls.Add(bottomLabel);
-
-            Label topScoreLabel = new Label
-            {
-                Text = "21",
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.Transparent,
-                Location = new Point(80, 130),
-                AutoSize = true
-            };
-            courtPanel.Controls.Add(topScoreLabel);
-
-            Label bottomScoreLabel = new Label
-            {
-                Text = "15",
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.Transparent,
-                Location = new Point(80, 150),
-                AutoSize = true
-            };
-            courtPanel.Controls.Add(bottomScoreLabel);
-
-            courtLabels[index] = new Label[] { topLabel, bottomLabel, topScoreLabel, bottomScoreLabel };
-
-            return courtPanel;
+            var top = CreateCourtLabel("ÉQUIPE 1", new Point(60, 10));
+            var bot = CreateCourtLabel("ÉQUIPE 2", new Point(60, 270));
+            var scT = CreateCourtLabel("0", new Point(80, 130));
+            var scB = CreateCourtLabel("0", new Point(80, 150));
+            hp.Controls.AddRange(new Control[] { top, bot, scT, scB });
+            courtLabels[idx] = new[] { top, bot, scT, scB };
+            return hp;
         }
 
-
-        private Button CreateStyledButton(string text, int x, int y)
-        {
-            Button button = new Button
+        private Label CreateCourtLabel(string text, Point loc) =>
+            new Label
             {
-                Text = string.Join("\n", text.ToCharArray()),
+                Text = text,
+                Location = loc,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.Transparent
+            };
+
+        private Button CreateStyledButton(string txt, int x, int y)
+        {
+            var b = new Button
+            {
+                Text = string.Join("\n", txt.ToCharArray()),
                 Location = new Point(x, y),
                 Size = new Size(50, 180),
                 Font = new Font("Segoe UI", 10, FontStyle.Bold),
@@ -179,25 +154,13 @@ namespace ChassieuVolleyTournament
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat
             };
-            button.FlatAppearance.BorderSize = 0;
-
-            // Rounded corners
-            button.Region = new Region(new GraphicsPath(new PointF[]
-            {
-                new PointF(0,10), new PointF(10,0),
-                new PointF(button.Width-10,0), new PointF(button.Width,10),
-                new PointF(button.Width,button.Height-10), new PointF(button.Width-10,button.Height),
-                new PointF(10,button.Height), new PointF(0,button.Height-10)
-            }, new byte[]
-            {
-                1,1,1,1,1,1,1,1
-            }));
-            return button;
+            b.FlatAppearance.BorderSize = 0;
+            return b;
         }
 
         private Panel CreateRankingPanel(int x, int y, string title)
         {
-            Panel panel = new Panel
+            var p = new Panel
             {
                 Location = new Point(x, y),
                 Size = new Size(300, 200),
@@ -205,75 +168,103 @@ namespace ChassieuVolleyTournament
                 BorderStyle = BorderStyle.FixedSingle,
                 Padding = new Padding(5)
             };
-
-            Label lblTitle = new Label
+            var lbl = new Label
             {
                 Text = title,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                ForeColor = Color.White,
                 Dock = DockStyle.Top,
                 Height = 25,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                ForeColor = Color.White,
                 TextAlign = ContentAlignment.MiddleCenter
             };
-            panel.Controls.Add(lblTitle);
+            p.Controls.Add(lbl);
 
-            TableLayoutPanel table = new TableLayoutPanel
+            var t = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 4,
                 RowCount = 5,
                 CellBorderStyle = TableLayoutPanelCellBorderStyle.Single
             };
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
 
-            string[] headers = { "RANG", "ÉQUIPE", "PTS", "DIFF" };
-            foreach (var header in headers)
-                table.Controls.Add(CreateRankingCell(header, true));
-
-            string[] noms = { "ÉQUIPE 1", "ÉQUIPE 2", "ÉQUIPE 3", "ÉQUIPE 4" };
-            for (int i = 0; i < 4; i++)
+            string[] hdr = { "RANG", "ÉQUIPE", "PTS", "DIFF" };
+            foreach (var h in hdr) t.Controls.Add(CreateRankingCell(h, true));
+            string[] names = { "ÉQUIPE 1", "ÉQUIPE 2", "ÉQUIPE 3", "ÉQUIPE 4" };
+            for (int i = 0; i < names.Length; i++)
             {
-                table.Controls.Add(CreateRankingCell((i + 1).ToString()));
-                table.Controls.Add(CreateRankingCell(noms[i]));
-                table.Controls.Add(CreateRankingCell("3"));
-                table.Controls.Add(CreateRankingCell("+5"));
+                t.Controls.Add(CreateRankingCell((i + 1).ToString()));
+                t.Controls.Add(CreateRankingCell(names[i]));
+                t.Controls.Add(CreateRankingCell("0"));
+                t.Controls.Add(CreateRankingCell("0"));
             }
 
-            panel.Controls.Add(table);
-            return panel;
+            p.Controls.Add(t);
+            return p;
         }
 
-        private Label CreateRankingCell(string text, bool isHeader = false)
-        {
-            return new Label
+        private Label CreateRankingCell(string txt, bool hdr = false) =>
+            new Label
             {
-                Text = text,
-                Font = new Font("Segoe UI", isHeader ? 9 : 8, isHeader ? FontStyle.Bold : FontStyle.Regular),
+                Text = txt,
+                Font = new Font("Segoe UI", hdr ? 9 : 8, hdr ? FontStyle.Bold : FontStyle.Regular),
                 ForeColor = Color.White,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Fill
             };
+
+        public void SetFieldText(int idx, string t1, string t2, string s1, string s2)
+        {
+            if (idx < 0 || idx >= courtLabels.Length) return;
+            courtLabels[idx][0].Text = t1;
+            courtLabels[idx][1].Text = t2;
+            courtLabels[idx][2].Text = s1;
+            courtLabels[idx][3].Text = s2;
         }
 
-        public void SetTimerText(float time)
+        public void SetNextMatchText(int idx, string t1, string t2, string refName)
         {
-            int minutes = (int)(time / 60);
-            int seconds = (int)(time % 60);
-            timerValue.Text = $"{minutes:D2}:{seconds:D2}";
+            if (idx < 0 || idx >= matchPanels.Length) return;
+            ((Label)matchPanels[idx].Controls[0]).Text =
+                $"PROCHAIN MATCH\n{t1} VS {t2}\n📢 {refName}";
         }
 
-        // Example: method to update court labels later
-        public void UpdateCourt(int courtIndex, string topTeam, string bottomTeam, string topScore, string bottomScore)
+        public void SetTimerText(float seconds)
         {
-            if (courtIndex >= 0 && courtIndex < courtLabels.Length)
+            int m = (int)(seconds / 60), s = (int)(seconds % 60);
+            if (timerValue != null) timerValue.Text = $"{m:D2}:{s:D2}";
+        }
+
+        public Label[][] CourtLabels => courtLabels;
+
+        public void UpdateRankingTeamNames(string[] teamNames)
+        {
+            for (int panelIndex = 0; panelIndex < rankingPanels.Length; panelIndex++)
             {
-                courtLabels[courtIndex][0].Text = topTeam;
-                courtLabels[courtIndex][1].Text = bottomTeam;
-                courtLabels[courtIndex][2].Text = topScore;
-                courtLabels[courtIndex][3].Text = bottomScore;
+                var panel = rankingPanels[panelIndex];
+                if (panel == null) continue;
+
+                var table = panel.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
+                if (table == null) continue;
+
+                for (int teamIndex = 0; teamIndex < 4; teamIndex++)
+                {
+                    int controlIndex = (teamIndex + 1) * 4 + 1;
+                    if (controlIndex >= table.Controls.Count) continue;
+
+                    var lbl = table.Controls[controlIndex] as Label;
+                    if (lbl != null)
+                    {
+                        int globalTeamIndex = panelIndex * 4 + teamIndex;
+                        if (globalTeamIndex < teamNames.Length)
+                        {
+                            lbl.Text = teamNames[globalTeamIndex];
+                        }
+                    }
+                }
             }
         }
     }

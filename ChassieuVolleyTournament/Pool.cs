@@ -14,6 +14,7 @@ namespace ChassieuVolleyTournament
         public Pool (Team Team1, Team Team2, Team Team3, Team Team4)
         {
             Ranking = new Dictionary<String, Team> ();
+            Matches = new List<Match> ();
 
             Ranking.Add("1er", Team1);
             Ranking.Add("2eme", Team2);
@@ -27,22 +28,45 @@ namespace ChassieuVolleyTournament
         {
             List<Team> Teams = Ranking.Values.ToList();
 
-            string Team1 = Teams[0].Name;
-            string Team2 = Teams[1].Name;
-            string Team3 = Teams[2].Name;
-            string Team4 = Teams[3].Name;
-
-            Matches.Add(new Match(Team1, Team2));
-            Matches.Add(new Match(Team3, Team4));
-            Matches.Add(new Match(Team1, Team3));
-            Matches.Add(new Match(Team2, Team4));
-            Matches.Add(new Match(Team1, Team4));
-            Matches.Add(new Match(Team2, Team3));
+            Matches.Add(new Match(Teams[0], Teams[1]));
+            Matches.Add(new Match(Teams[2], Teams[3]));
+            Matches.Add(new Match(Teams[0], Teams[2]));
+            Matches.Add(new Match(Teams[1], Teams[3]));
+            Matches.Add(new Match(Teams[0], Teams[3]));
+            Matches.Add(new Match(Teams[1], Teams[2]));
         }
 
         public void UpdateRanking()
         {
+            List<Team> teams = Ranking.Values.ToList();
 
+            Ranking.Clear();
+
+            List<Team> orderedTeams = teams
+                .OrderByDescending(t => t.LevelStatistics.TournamentPoints)
+                .ThenByDescending(t => t.LevelStatistics.Difference)
+                .ToList();
+
+            bool allEmpty = orderedTeams.All(t =>
+                t.LevelStatistics.TournamentPoints == 0 &&
+                t.LevelStatistics.Difference == 0);
+
+            if (allEmpty)
+            {
+                foreach (Team team in orderedTeams)
+                {
+                    Console.WriteLine($"{team.Name}: Non Classé");
+                }
+            }
+            else
+            {
+                Ranking["1er"] = orderedTeams[0];
+                Ranking["2ème"] = orderedTeams[1];
+                Ranking["3ème"] = orderedTeams[2];
+                Ranking["4ème"] = orderedTeams[3];
+            }
         }
+
+        public List<Match> GetMatches() => Matches;
     }
 }

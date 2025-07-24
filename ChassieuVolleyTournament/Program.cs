@@ -1,44 +1,73 @@
 ﻿using System;
-using System.Drawing;
-using System.Net;
-using System.Text;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Collections.Generic;
-using System.IO;
-using System.Diagnostics;
 
 namespace ChassieuVolleyTournament
 {
-    //IP : 192.168.1.144
-
     static class Program
     {
-        static HashSet<string> validKeys = new HashSet<string> { "abc123", "volley2025", "secret" };
+        static Dictionary<string, string> validKeysWithTeams;
 
         public static DisplayWindow window1;
         public static StaffWindow window2;
 
         private static Timer timer;
+        private static RefereeWebServer refereeWebServer;
 
         [STAThread]
         static void Main()
         {
             Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
 
             window1 = new DisplayWindow();
-
             window2 = new StaffWindow();
-
             timer = new Timer();
+
+            Tournament.Instance.SetWindows(window1, window2);
 
             window1.Show();
             window2.Show();
 
+            EventHandler onIdle = null;
+            onIdle = (s, e) =>
+            {
+                Application.Idle -= onIdle;
+                Tournament.Instance.InitializeMorningPhase();
+
+                SetKeysInfo();
+
+                Task.Run(() => StartWebServer());
+            };
+            Application.Idle += onIdle;
+
+            window1.Refresh();
+            window2.Refresh();
+
             Task.Run(() => MainLoop());
-            Task.Run(() => StartWebServer());
 
             Application.Run();
+        }
+
+        static void SetKeysInfo()
+        {
+            validKeysWithTeams = new Dictionary<string, string>();
+
+            var phase = Tournament.Instance.GetCurrentPhase() as PoolPhase;
+            if (phase == null) return;
+
+            foreach (Pool pool in phase.GetPools())
+            {
+                foreach (Match match in pool.Matches)
+                {
+                    if (!string.IsNullOrEmpty(match.Key))
+                    {
+                        validKeysWithTeams[match.Key] = $"{match.Team1.Name}|{match.Team2.Name}";
+                    }
+                }
+            }
         }
 
         public static async Task MainLoop()
@@ -52,80 +81,39 @@ namespace ChassieuVolleyTournament
             while (true)
             {
                 long currentTime = stopwatch.ElapsedMilliseconds;
-                float deltaTime = (currentTime - lastTime) / 1000f; // deltaTime in seconds
+                float deltaTime = (currentTime - lastTime) / 1000f;
                 lastTime = currentTime;
 
                 if (!timer.GetTimerIsEnabled())
                     return;
 
                 timer.DecrementTimer(deltaTime);
-                window1.Invoke((MethodInvoker)delegate {
-                    window1.SetTimerText(timer.GetCurrentTime()); // replace with your real time
-                });
 
+                if (Tournament.Instance.GetDisplayWindow() != null)
+                {
+                    Tournament.Instance.GetDisplayWindow().Invoke((MethodInvoker)delegate
+                    {
+                        Tournament.Instance.GetDisplayWindow().SetTimerText(timer.GetCurrentTime());
+                    });
+                }
+
+                await Task.Delay(50);
             }
         }
 
         static async Task StartWebServer()
         {
-            string url = "http://+:8080/";
-            HttpListener listener = new HttpListener();
-            listener.Prefixes.Add(url);
-            listener.Start();
-            Console.WriteLine($"Server started at {url}");
+            if (validKeysWithTeams == null || validKeysWithTeams.Count == 0)
+                return;
 
-            while (true)
+            refereeWebServer = new RefereeWebServer(validKeysWithTeams.Keys, Tournament.Instance.GetDisplayWindow());
+
+            foreach (var kvp in validKeysWithTeams)
             {
-                HttpListenerContext context = await listener.GetContextAsync();
-                HttpListenerRequest request = context.Request;
-                HttpListenerResponse response = context.Response;
-
-                if (request.HttpMethod == "POST")
-                {
-                    var reader = new StreamReader(request.InputStream, request.ContentEncoding);
-                    string body = await reader.ReadToEndAsync();
-
-                    string key = Uri.UnescapeDataString(body).Replace("key=", "").Trim();
-                    bool isValid = validKeys.Contains(key);
-
-                    // Simple HTML result per user
-                    string htmlResponse = $@"<!DOCTYPE html>
-                    <html>
-                    <head><meta charset='utf-8'></head>
-                    <body style='font-family:Arial;text-align:center;margin-top:50px;'>
-                        <h2>{(isValid ? "✅ Clé valide" : "❌ Clé invalide")}</h2>
-                        <a href='/'>Retour</a>
-                    </body>
-                    </html>";
-
-                    byte[] buffer = Encoding.UTF8.GetBytes(htmlResponse);
-                    response.ContentType = "text/html";
-                    response.ContentLength64 = buffer.Length;
-
-                    await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-                    response.OutputStream.Close();
-                }
-                else
-                {
-                    string html = @"<!DOCTYPE html>
-                    <html>
-                    <head><meta charset='utf-8'></head>
-                    <body>
-                        <form method='post'>
-                            <input name='key' placeholder='Entrer la clé' />
-                            <button type='submit'>Valider</button>
-                        </form>
-                    </body>
-                    </html>";
-                    byte[] buffer = Encoding.UTF8.GetBytes(html);
-                    response.ContentType = "text/html";
-                    response.ContentLength64 = buffer.Length;
-
-                    await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-                    response.OutputStream.Close();
-                }
-
+                refereeWebServer.SetInfoForKey(kvp.Key, kvp.Value);
             }
+
+            await refereeWebServer.Start();
         }
     }
 }
