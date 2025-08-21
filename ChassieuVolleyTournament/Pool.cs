@@ -1,72 +1,86 @@
-﻿using System;
+﻿#region ---- Includes ----
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
+#endregion
 
 namespace ChassieuVolleyTournament
 {
+    /// ---------------------------------------------------
+    /// Represents a pool of four teams in a tournament,
+    /// managing matches and ranking based on performance.
+    /// ---------------------------------------------------
     internal class Pool
     {
-        public Dictionary<String, Team> Ranking {  get; set; }
+        #region ---- Properties ----
+        public Dictionary<string, Team> Ranking { get; set; }
         public List<Match> Matches { get; set; }
+        #endregion
 
-        public Pool (Team Team1, Team Team2, Team Team3, Team Team4)
+        #region ---- Constructor ---- 
+        /// ----------------------------------------------------------
+        /// Initializes a Pool with four teams, sets initial ranking,
+        /// and generates all pool matches between teams.
+        /// ----------------------------------------------------------
+        public Pool(Team team1, Team team2, Team team3, Team team4)
         {
-            Ranking = new Dictionary<String, Team> ();
-            Matches = new List<Match> ();
+            Ranking = new Dictionary<string, Team>();
+            Matches = new List<Match>();
 
-            Ranking.Add("1er", Team1);
-            Ranking.Add("2eme", Team2);
-            Ranking.Add("3eme", Team3);
-            Ranking.Add("4eme", Team4);
+            Ranking.Add("1er", team1);
+            Ranking.Add("2ème", team2);
+            Ranking.Add("3ème", team3);
+            Ranking.Add("4ème", team4);
 
             GenerateMatches();
         }
 
+        #endregion
+
+        #region ---- Methods ----
+        /// ----------------------------------------------------
+        /// Generates matches for all pairings within the pool.
+        /// ----------------------------------------------------
         private void GenerateMatches()
         {
-            List<Team> Teams = Ranking.Values.ToList();
+            List<Team> teams = Ranking.Values.ToList();
 
-            Matches.Add(new Match(Teams[0], Teams[1]));
-            Matches.Add(new Match(Teams[2], Teams[3]));
-            Matches.Add(new Match(Teams[0], Teams[2]));
-            Matches.Add(new Match(Teams[1], Teams[3]));
-            Matches.Add(new Match(Teams[0], Teams[3]));
-            Matches.Add(new Match(Teams[1], Teams[2]));
+            Matches.Add(new Match(teams[0], teams[1]));
+            Matches.Add(new Match(teams[2], teams[3]));
+            Matches.Add(new Match(teams[0], teams[2]));
+            Matches.Add(new Match(teams[1], teams[3]));
+            Matches.Add(new Match(teams[0], teams[3]));
+            Matches.Add(new Match(teams[1], teams[2]));
         }
 
+        /// -----------------------------------------------------
+        /// Updates the ranking dictionary by sorting teams
+        /// based on TournamentPoints and then point difference.
+        /// -----------------------------------------------------
         public void UpdateRanking()
         {
-            List<Team> teams = Ranking.Values.ToList();
+            List<Team> teams = GetTeams();
 
             Ranking.Clear();
 
             List<Team> orderedTeams = teams
-                .OrderByDescending(t => t.LevelStatistics.TournamentPoints)
-                .ThenByDescending(t => t.LevelStatistics.Difference)
+                .OrderByDescending(t => t.Statistics.TournamentPoints)
+                .ThenByDescending(t => t.Statistics.Difference)
                 .ToList();
 
-            bool allEmpty = orderedTeams.All(t =>
-                t.LevelStatistics.TournamentPoints == 0 &&
-                t.LevelStatistics.Difference == 0);
-
-            if (allEmpty)
-            {
-                foreach (Team team in orderedTeams)
-                {
-                    Console.WriteLine($"{team.Name}: Non Classé");
-                }
-            }
-            else
-            {
-                Ranking["1er"] = orderedTeams[0];
-                Ranking["2ème"] = orderedTeams[1];
-                Ranking["3ème"] = orderedTeams[2];
-                Ranking["4ème"] = orderedTeams[3];
-            }
+            Ranking["1er"] = orderedTeams[0];
+            Ranking["2ème"] = orderedTeams[1];
+            Ranking["3ème"] = orderedTeams[2];
+            Ranking["4ème"] = orderedTeams[3];
         }
 
+        #endregion
+
+        #region ---- Getters & Setters ----
         public List<Match> GetMatches() => Matches;
+        public List<Team> GetTeams() => Ranking.Values.ToList();
+
+        #endregion
     }
 }

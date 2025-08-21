@@ -1,29 +1,34 @@
-﻿using System;
+﻿#region ---- Includes ----
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows.Forms;  // For Control.Invoke
+using System.Windows.Forms;
+#endregion
 
 namespace ChassieuVolleyTournament
 {
     public class RefereeWebServer
     {
-        private readonly HashSet<string> validKeys;
-        private readonly Dictionary<string, string[]> keyToTeams;
+        #region ---- Properties ----
+        private HashSet<string> validKeys;
+        private readonly Dictionary<string, Team[]> keyToTeams;
         private readonly Dictionary<string, bool> keyInverted;
         private readonly Dictionary<string, int[]> keyScores;
         private readonly Dictionary<string, Stack<int>> lastModifiedTeam;
         private readonly string url;
-        private readonly Control uiControl;  // Control for UI thread marshaling
+        private readonly Control uiControl;
+        #endregion
 
+        #region ---- Constructor ----
         public RefereeWebServer(IEnumerable<string> keys, Control uiControl, string urlPrefix = "http://+:8080/")
         {
             this.uiControl = uiControl ?? throw new ArgumentNullException(nameof(uiControl));
 
             validKeys = new HashSet<string>(keys);
-            keyToTeams = new Dictionary<string, string[]>();
+            keyToTeams = new Dictionary<string, Team[]>();
             keyInverted = new Dictionary<string, bool>();
             keyScores = new Dictionary<string, int[]>();
             lastModifiedTeam = new Dictionary<string, Stack<int>>();
@@ -31,13 +36,15 @@ namespace ChassieuVolleyTournament
 
             foreach (var key in validKeys)
             {
-                keyToTeams[key] = new[] { "Team 1", "Team 2" };
+                keyToTeams[key] = new[] { new Team("Team 1"), new Team("Team 2") };
                 keyInverted[key] = false;
                 keyScores[key] = new int[] { 0, 0 };
                 lastModifiedTeam[key] = new Stack<int>();
             }
         }
+        #endregion
 
+        #region ---- Getters & Setters ----
         public void SetInfoForKey(string key, string info)
         {
             if (validKeys.Contains(key))
@@ -45,11 +52,14 @@ namespace ChassieuVolleyTournament
                 var split = info.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
                 if (split.Length == 2)
                 {
-                    keyToTeams[key] = new[] { split[0].Trim(), split[1].Trim() };
+                    keyToTeams[key][0].Name = split[0].Trim();
+                    keyToTeams[key][1].Name = split[1].Trim();
                 }
             }
         }
+        #endregion
 
+        #region ---- Methods & Tasks ----
         public async Task Start()
         {
             HttpListener listener = new HttpListener();
@@ -84,7 +94,7 @@ namespace ChassieuVolleyTournament
                     }
                     else
                     {
-                        await RespondAsync(response, GenerateErrorPage("❌ Clé invalide"));
+                        await RespondAsync(response, GenerateErrorPage("❌ Clef invalide"));
                     }
                 }
                 else if (body.StartsWith("invertKey="))
@@ -108,7 +118,6 @@ namespace ChassieuVolleyTournament
                         lastModifiedTeam[key].Push(teamIndex);
 
                         UpdateTournamentMatchScore(key);
-
                         await ServeScoreboardPage(response, key);
                     }
                 }
@@ -122,7 +131,6 @@ namespace ChassieuVolleyTournament
                             keyScores[key][lastTeam]--;
 
                         UpdateTournamentMatchScore(key);
-
                         await ServeScoreboardPage(response, key);
                     }
                 }
@@ -147,10 +155,9 @@ namespace ChassieuVolleyTournament
 
             if (match != null)
             {
-                // Marshal UI updates to the UI thread
                 uiControl.Invoke((Action)(() =>
                 {
-                    match.SetScores(teams[0], teams[1], scores[0], scores[1]);
+                    match.SetScores(teams[0].Name, teams[1].Name, scores[0], scores[1]);
                     Tournament.Instance.UpdateLiveScores();
                 }));
             }
@@ -158,7 +165,15 @@ namespace ChassieuVolleyTournament
 
         private async Task ServeScoreboardPage(HttpListenerResponse response, string key)
         {
-            var teams = keyToTeams[key];
+            var match = Tournament.Instance.GetMatchByKey(key);
+            if (match == null)
+            {
+                await RespondAsync(response, GenerateErrorPage("❌ Match introuvable"));
+                return;
+            }
+
+            var teams = match.GetTeamsNames(); 
+
             bool inverted = keyInverted[key];
             var scores = keyScores[key];
 
@@ -295,9 +310,9 @@ namespace ChassieuVolleyTournament
             <html>
             <head><meta charset='utf-8'></head>
             <body style='font-family:Arial;text-align:center;margin-top:50px;'>
-                <h2>Connexion Clé</h2>
+                <h2>Connexion Clef</h2>
                 <form method='post'>
-                    <input name='key' placeholder='Entrer la clé' />
+                    <input name='key' placeholder='Entrer la clef' />
                     <button type='submit'>Valider</button>
                 </form>
             </body>
@@ -312,5 +327,30 @@ namespace ChassieuVolleyTournament
             await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             response.OutputStream.Close();
         }
+        #endregion
+
+        #region ---- Getters & Setters ----
+
+        public void AddValidKeys(Dictionary<string, Team[]> keysWithTeams)
+        {
+            foreach (var kvp in keysWithTeams)
+            {
+                var key = kvp.Key;
+                var teams = kvp.Value;
+
+                if (teams.Length != 2 || validKeys.Contains(key))
+                    continue;
+
+                validKeys.Add(key);
+
+                keyToTeams[key] = teams;
+                keyScores[key] = new int[] { 0, 0 };
+                keyInverted[key] = false;
+                lastModifiedTeam[key] = new Stack<int>();
+            }
+        }
+
+
+        #endregion
     }
 }

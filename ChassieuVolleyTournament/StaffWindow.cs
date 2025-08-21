@@ -1,12 +1,16 @@
-﻿using System;
+﻿#region ---- Includes ----
+using System;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
+
+#endregion
 
 namespace ChassieuVolleyTournament
 {
     public class StaffWindow : Form
     {
+        #region ---- Properties ----
+
         private const int TeamCount = 16;
         private const int Columns = 6;
         private readonly string[] headers = {
@@ -17,6 +21,9 @@ namespace ChassieuVolleyTournament
         private Label[] nextMatchKeyLabels = new Label[3];
         private TableLayoutPanel mainPanel;
 
+        #endregion
+
+        #region ---- Constructor ----
         public StaffWindow()
         {
             Text = "Infos priv\u00e9es du tournoi";
@@ -28,7 +35,7 @@ namespace ChassieuVolleyTournament
             mainPanel = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                RowCount = 2,
+                RowCount = 3,
                 ColumnCount = 1,
                 BackColor = BackColor
             };
@@ -37,8 +44,13 @@ namespace ChassieuVolleyTournament
             Shown += (s, e) => BeginInvoke(new Action(FinalizeLayout));
         }
 
+        #endregion
+
+        #region ---- Methods ----
+
         private void FinalizeLayout()
         {
+            // === TABLE: Team Data ===
             var table = new TableLayoutPanel
             {
                 Dock = DockStyle.Top,
@@ -69,6 +81,8 @@ namespace ChassieuVolleyTournament
 
             for (int r = 0; r < TeamCount; r++)
             {
+                int capturedRow = r;
+
                 table.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
                 for (int c = 0; c < Columns; c++)
                 {
@@ -83,30 +97,114 @@ namespace ChassieuVolleyTournament
 
                     if (c == 0)
                     {
-                        tb.Text = "Équipe 0";
-                        int capturedIndex = r;
-                        tb.TextChanged += (s, e) =>
+                        tb.Text = $"Équipe {r + 1}";
+
+                        string oldTeamName = tb.Text;
+                        tb.Enter += (s, e) => oldTeamName = tb.Text;
+
+                        tb.KeyDown += (s, e) =>
                         {
-                            Tournament.Instance.Teams[capturedIndex].Name = tb.Text;
-
-                            var display = Tournament.Instance.GetDisplayWindow();
-                            if (display != null)
+                            if (e.KeyCode == Keys.Enter)
                             {
-                                string[] allTeamNames = new string[Tournament.Instance.Teams.Length];
-                                for (int i = 0; i < allTeamNames.Length; i++)
-                                    allTeamNames[i] = Tournament.Instance.Teams[i].Name;
+                                Console.WriteLine($"DEBUG: row = {capturedRow}, team count = {Tournament.Instance.Teams.Length}");
 
-                                display.UpdateRankingTeamNames(allTeamNames);
+                                string newName = tb.Text;
+
+                                if (capturedRow >= 0 && capturedRow < Tournament.Instance.Teams.Length)
+                                {
+                                    string oldName = Tournament.Instance.Teams[capturedRow].Name;
+                                    Tournament.Instance.Teams[capturedRow].Name = newName;
+
+                                    // ✅ Update matches where this name appears
+                                    Tournament.Instance.UpdateTeamNameInAllMatches(oldName, newName);
+                                }
+
+                                // Optional: update display window too
+                                var display = Tournament.Instance.GetDisplayWindow();
+                                display?.UpdateTeamNameInMatches(oldTeamName, newName);
+
+                                oldTeamName = newName;
+                                e.Handled = true;
                             }
                         };
+
+                        // Optionally, you can remove the TextChanged event handler since it's no longer needed.
                     }
+
                     else if (c == 5)
                     {
+                        // Ranking
                         tb.Text = ((r % 4) + 1).ToString();
                     }
                     else
                     {
                         tb.Text = "0";
+
+                        capturedRow = r;
+                        int capturedCol = c;
+
+                        // Make Difference column (col 3) read-only since it's auto-calculated
+                        if (capturedCol == 3)
+                        {
+                            tb.ReadOnly = true;
+                            tb.BackColor = Color.LightGray;
+                        }
+                        else
+                        {
+                            tb.TextChanged += (s, e) =>
+                            {
+                                var team = Tournament.Instance.Teams[capturedRow];
+                                string newText = tb.Text.Trim();
+
+                                switch (capturedCol)
+                                {
+                                    case 0:
+                                        string oldName = team.Name;
+                                        if (newText != oldName)
+                                        {
+                                            team.Name = newText;
+
+                                            // Update name in the display
+                                            var display = Tournament.Instance.GetDisplayWindow();
+                                            display?.UpdateTeamNameInMatches(oldName, newText);
+                                        }
+                                        break;
+
+                                    case 1:
+                                        if (!int.TryParse(newText, out int scored)) scored = 0;
+                                        team.Statistics.ScoredPoints = scored;
+                                        break;
+
+                                    case 2:
+                                        if (!int.TryParse(newText, out int taken)) taken = 0;
+                                        team.Statistics.TakenPoints = taken;
+                                        break;
+
+                                    case 4:
+                                        if (!int.TryParse(newText, out int points)) points = 0;
+                                        team.Statistics.TournamentPoints = points;
+                                        break;
+                                }
+
+                                // Auto-update Difference when Scored or Taken changes
+                                team.Statistics.Difference = team.Statistics.ScoredPoints - team.Statistics.TakenPoints;
+                                textFields[capturedRow, 3].Text = team.Statistics.Difference.ToString();
+
+                                // Refresh display
+                                var displayRefresh = Tournament.Instance.GetDisplayWindow();
+                                displayRefresh?.Update();
+                            };
+
+                            // === NEW: Press Enter to force ranking refresh ===
+                            tb.KeyDown += (s, e) =>
+                            {
+                                if (e.KeyCode == Keys.Enter)
+                                {
+                                    Tournament.Instance.RefreshAllPoolsRanking();
+                                    e.SuppressKeyPress = true;
+                                }
+                            };
+                        }
                     }
 
                     textFields[r, c] = tb;
@@ -116,9 +214,11 @@ namespace ChassieuVolleyTournament
 
             mainPanel.Controls.Add(table);
 
+            // === TABLE: Match Keys ===
             var keyTable = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill,
+                Dock = DockStyle.Top, // was Fill
+                AutoSize = true,      // ensures full height
                 RowCount = 2,
                 ColumnCount = 3,
                 Padding = new Padding(20),
@@ -131,7 +231,7 @@ namespace ChassieuVolleyTournament
                 keyTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33f));
                 var curr = new Label
                 {
-                    Text = $"Cl\u00e9 Terrain Actuel {i + 1}",
+                    Text = $"Clef Terrain Actuel {i + 1}",
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleCenter,
                     BackColor = Color.LightYellow,
@@ -143,7 +243,7 @@ namespace ChassieuVolleyTournament
 
                 var nxt = new Label
                 {
-                    Text = $"Cl\u00e9 Match Suivant {i + 1}",
+                    Text = $"Clef Match Suivant {i + 1}",
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleCenter,
                     BackColor = Color.LightBlue,
@@ -155,7 +255,72 @@ namespace ChassieuVolleyTournament
             }
 
             mainPanel.Controls.Add(keyTable);
+
+            // === BUTTONS ===
+            var buttonPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                Padding = new Padding(20),
+                WrapContents = false,
+                Anchor = AnchorStyles.None
+            };
+
+            buttonPanel.Controls.Add(CreateActionButton("Timer Échauffement", Color.Orange, (s, e) =>
+            {
+                Tournament.Instance.StartTimer(false);
+            }));
+
+            buttonPanel.Controls.Add(CreateActionButton("Timer Match", Color.Green, (s, e) =>
+            {
+                Tournament.Instance.StartTimer(true);
+            }));
+
+            buttonPanel.Controls.Add(CreateActionButton("Prochaine Phase", Color.Black, (s, e) =>
+            {
+                Tournament.Instance.RaiseEndPhase();
+            }));
+
+            buttonPanel.Controls.Add(CreateActionButton("Lancer la Pause", Color.Purple, (s, e) =>
+            {
+                Tournament.Instance.GetDisplayWindow().PauseLayout();
+                Tournament.Instance.GetDisplayWindow().Update();
+            }));
+
+            mainPanel.Controls.Add(buttonPanel);
         }
+
+        private Button CreateActionButton(string text, Color backColor, EventHandler onClick)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                BackColor = backColor,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                AutoSize = true,
+                Padding = new Padding(10),
+                Margin = new Padding(10),
+                FlatStyle = FlatStyle.Flat
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.Click += onClick;
+            return btn;
+        }
+
+        public void UpdateKeysLabels(string[] NewCurrentMatchsKeys, string[] NewNextMatchsKeys)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                currentMatchKeyLabels[i].Text = $"Clef Terrain Actuel {i + 1} : {NewCurrentMatchsKeys[i]}";
+                nextMatchKeyLabels[i].Text = $"Clef Match Suivant {i + 1} : {NewNextMatchsKeys[i]}";
+            }
+        }
+
+        #endregion
+
+        #region ---- Getters & Setters ----
 
         public void SetTeamData(int row, string name,
             int scored, int taken, int diff, int points, int rank)
@@ -186,8 +351,25 @@ namespace ChassieuVolleyTournament
             for (int i = 0; i < names.Length; i++)
                 textFields[i, 0].Text = names[i];
         }
+        #endregion
+        public void SetRankingText(int poolIndex, string[] teamNames, string[] teamDiffs, string[] teamPoints, int[] scoredPoints, int[] takenPoints)
+        {
+            int teamsPerPool = 4;
+            int startRow = poolIndex * teamsPerPool;
+
+            for (int i = 0; i < teamsPerPool; i++)
+            {
+                int row = startRow + i;
+                textFields[row, 0].Text = teamNames[i];
+                textFields[row, 1].Text = scoredPoints[i].ToString();
+                textFields[row, 2].Text = takenPoints[i].ToString();
+                textFields[row, 3].Text = teamDiffs[i];
+                textFields[row, 4].Text = teamPoints[i];
+            }
+        }
     }
 
+    #region ---- Helper ----
     public static class ArrayExtensions
     {
         public static void ForEach<T>(this T[] arr, Action<T, int> action)
@@ -195,4 +377,6 @@ namespace ChassieuVolleyTournament
             for (int i = 0; i < arr.Length; i++) action(arr[i], i);
         }
     }
+
+    #endregion
 }

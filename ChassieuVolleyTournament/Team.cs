@@ -1,45 +1,43 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ChassieuVolleyTournament
+﻿namespace ChassieuVolleyTournament
 {
+    /// ---------------------------------------------
+    /// Represents a volleyball team with a name and
+    /// associated statistical data.
+    /// ---------------------------------------------
     public class Team
     {
+        #region ---- Properties ---- 
         public string Name { get; set; }
-        public TeamStatistics MorningStatistics;
-        public TeamStatistics LevelStatistics;
-        public TeamStatistics TreeStatistics; 
+        public TeamStatistics Statistics;
 
+        #endregion
+
+        #region ---- Constructor ----
+        /// ----------------------------------------------------
+        /// Initializes a new Team instance with the given name
+        /// and resets its statistics.
+        /// ----------------------------------------------------
         public Team(string name)
         {
-            this.Name = name;
-
-            this.MorningStatistics = new TeamStatistics();
-            this.LevelStatistics = new TeamStatistics();
-            this.TreeStatistics = new TeamStatistics();
-
+            Name = name;
+            Statistics = new TeamStatistics();
             InitializeStatistics();
         }
 
+        #endregion
+
+        #region ---- Methods ---- 
+        /// -----------------------------------------
+        /// Resets all statistical counters to zero.
+        /// -----------------------------------------
         private void InitializeStatistics()
         {
-            this.MorningStatistics.TournamentPoints = 0;
-            this.MorningStatistics.ScoredPoints = 0;
-            this.MorningStatistics.TakenPoints = 0;
-            this.MorningStatistics.Difference = 0;
-
-            this.LevelStatistics.TournamentPoints = 0;
-            this.LevelStatistics.ScoredPoints = 0;
-            this.LevelStatistics.TakenPoints = 0;
-            this.LevelStatistics.Difference = 0;
-
-            this.TreeStatistics.TournamentPoints = 0;
-            this.TreeStatistics.ScoredPoints = 0;
-            this.TreeStatistics.TakenPoints = 0;
-            this.TreeStatistics.Difference = 0;
+            Statistics.TournamentPoints = 0;
+            Statistics.ScoredPoints = 0;
+            Statistics.TakenPoints = 0;
+            Statistics.Difference = 0;
         }
+
+        #endregion
     }
 }
