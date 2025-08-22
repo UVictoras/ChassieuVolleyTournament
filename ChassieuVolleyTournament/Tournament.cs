@@ -3,21 +3,30 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Reflection.Emit;
-using System.Text.RegularExpressions;
 using System.Windows.Forms;
+
 #endregion
 
 namespace ChassieuVolleyTournament
 {
+    /// -----------------------------------------------------------
+    /// Singleton class representing the Volleyball Tournament.
+    /// Manages all tournament phases, teams, matches, and timers.
+    /// Responsible for updating the display and staff windows.
+    /// -----------------------------------------------------------
     public class Tournament
     {
         #region ---- Properties ----
+
+        /// --------------------------------------------
+        /// Singleton instance of the Tournament class.
+        /// --------------------------------------------
         private static readonly Lazy<Tournament> _instance =
             new Lazy<Tournament>(() => new Tournament());
 
-        public static Tournament Instance => _instance.Value;
-
+        /// ------------------------------
+        /// Array of participating teams.
+        /// ------------------------------
         public Team[] Teams;
 
         private ChassieuVolleyTournament.Timer _timer;
@@ -34,11 +43,19 @@ namespace ChassieuVolleyTournament
 
         private long _lastTimerTime;
 
+        /// ----------------------------------------------
+        /// Event triggered when a tournament phase ends.
+        /// ----------------------------------------------
         public event EventHandler EndPhase;
 
         #endregion
 
         #region ---- Constructor ----
+
+        /// -----------------------------------------------------
+        /// Private constructor for singleton pattern.
+        /// Initializes the tournament timer and valid keys set.
+        /// -----------------------------------------------------
         private Tournament()
         {
             _timer = new ChassieuVolleyTournament.Timer();
@@ -49,6 +66,12 @@ namespace ChassieuVolleyTournament
         #endregion
 
         #region ---- Methods ----
+
+        /// --------------------------------------------------------
+        /// Initializes the morning phase with 16 teams distributed
+        /// into 4 pools. Configures timer callbacks and updates
+        /// staff and display windows.
+        /// --------------------------------------------------------
         public void InitializeMorningPhase()
         {
             Teams = new Team[16];
@@ -72,7 +95,6 @@ namespace ChassieuVolleyTournament
             _morningPhase = new PoolPhase(tempPools[0], tempPools[1], tempPools[2], tempPools[3]);
             _currentPhase = _morningPhase;
 
-            // ensure only one subscription to the event
             _timer.OnTimerStop -= _morningPhase.IncrementTeamsScores;
             _timer.OnTimerStop += _morningPhase.IncrementTeamsScores;
 
@@ -107,6 +129,11 @@ namespace ChassieuVolleyTournament
             EndPhase += InitializeLevelPhase;
         }
 
+        /// ------------------------------------------------------
+        /// Initializes the level phase (second pool stage) after
+        /// morning phase ends. Reorders teams into new pools,
+        /// updates timers, display, and staff windows.
+        /// ------------------------------------------------------
         public void InitializeLevelPhase(object sender, EventArgs e)
         {
             if (Application.OpenForms.Count > 0)
@@ -174,7 +201,6 @@ namespace ChassieuVolleyTournament
             _staffWindow.SetNextMatchKey(1, (_currentPhase as PoolPhase).NextMatchField2.Key);
             _staffWindow.SetNextMatchKey(2, (_currentPhase as PoolPhase).NextMatchField3.Key);
 
-            // Build pool texts
             for (int i = 0; i < 4; i++)
             {
                 var pool = _levelPhase.GetPools()[i];
@@ -231,6 +257,11 @@ namespace ChassieuVolleyTournament
             Program.GiveWebServerKeys();
         }
 
+        /// ------------------------------------------------------
+        /// Initializes the final knockout phase with the 8-team
+        /// bracket. Sets up display, staff windows, and disables
+        /// previous timer callbacks.
+        /// ------------------------------------------------------
         public void InitializeFinalPhase(object sender, EventArgs e)
         {
             _displayWindow.FinalLayout();
@@ -238,27 +269,30 @@ namespace ChassieuVolleyTournament
             _finalBracket = new TreePhase();
             _finalBracket.GenerateMatches(_levelPhase.GetPools()[0], _levelPhase.GetPools()[1], _levelPhase.GetPools()[2], _levelPhase.GetPools()[3]);
 
+            _timer.OnTimerStop -= _levelPhase.IncrementTeamsScores;
+            _timer.OnTimerStop -= _levelPhase.CycleMatches;
+            _timer.OnTimerStop -= UpdateWindowTexts;
+            _timer.OnTimerStop -= UpdateKeys;
+
             _currentPhase = _finalBracket;
 
             _displayWindow.Update();
 
+            EndPhase -= InitializeFinalPhase;
+
+            Program.TriggerResetWebServer();
+
             Program.SetKeysInfo();
             Program.GiveWebServerKeysInfo();
             Program.GiveWebServerKeys();
+
+            _staffWindow.RebuildForTreePhase();
         }
 
-        public void SetWindows(DisplayWindow display, StaffWindow staff)
-        {
-            _displayWindow = display;
-            _staffWindow = staff;
-        }
-
-        public void SetCurrentPhase(Phase phase)
-        {
-            _currentPhase = phase;
-            UpdateWindowTexts(null, EventArgs.Empty);
-        }
-
+        /// --------------------------------------------------
+        /// Updates the display window with current match and
+        /// next match information for all fields.
+        /// --------------------------------------------------
         private void UpdateWindowTexts(object sender, EventArgs e)
         {
             if (Application.OpenForms.Count > 0)
@@ -318,39 +352,71 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        /// ----------------------------------------------
+        /// Updates live scores on the display window for
+        /// current matches in pool or tree phases.
+        /// ----------------------------------------------
         public void UpdateLiveScores()
         {
             if (_displayWindow == null || _currentPhase == null)
                 return;
 
-            if (!(_currentPhase is PoolPhase poolPhase))
-                return;
-
-            Match[] currentMatches = new Match[]
+            if (_currentPhase is PoolPhase poolPhase)
             {
-                poolPhase.CurrentMatchField1,
-                poolPhase.CurrentMatchField2,
-                poolPhase.CurrentMatchField3
-            };
+                Match[] currentMatches = new Match[]
+                {
+                    poolPhase.CurrentMatchField1,
+                    poolPhase.CurrentMatchField2,
+                    poolPhase.CurrentMatchField3
+                };
 
-            for (int i = 0; i < currentMatches.Length; i++)
+                for (int i = 0; i < currentMatches.Length; i++)
+                {
+                    Match match = currentMatches[i];
+                    if (match == null)
+                        continue;
+
+                    var labels = _displayWindow.CourtLabels.Length > i ? _displayWindow.CourtLabels[i] : null;
+                    if (labels == null || labels.Length < 4)
+                        continue;
+
+                    labels[0].Text = match.GetTeam1Name();
+                    labels[1].Text = match.GetTeam2Name();
+                    labels[3].Text = match.GetScoreTeamOne().ToString();
+                    labels[2].Text = match.GetScoreTeamTwo().ToString();
+                }
+            }
+            else if (_currentPhase is TreePhase treePhase)
             {
-                Match match = currentMatches[i];
-                if (match == null)
-                    continue;
+                var allMatches = treePhase.GetMatches();
 
-                var labels = _displayWindow.CourtLabels[i];
+                foreach (var match in allMatches)
+                {
+                    string[] keys = new string[]
+                    {
+                        "P_QF1", "P_QF2", "P_QF3", "P_QF4",
+                        "C_QF1", "C_QF2", "C_QF3", "C_QF4",
+                        "P_SF1", "P_SF2",
+                        "C_SF1", "C_SF2",
+                        "P_FINAL", "C_FINAL",
+                        "P_3RD", "C_3RD"
+                    };
 
-                if (labels == null || labels.Length < 4)
-                    continue;
+                    foreach (var key in keys)
+                    {
+                        Match m = treePhase.GetMatchByKey(key);
+                        if (m == null) continue;
 
-                labels[0].Text = match.GetTeam1Name();
-                labels[1].Text = match.GetTeam2Name();
-                labels[2].Text = match.GetScoreTeamOne().ToString();
-                labels[3].Text = match.GetScoreTeamTwo().ToString();
+                        _displayWindow.UpdateBracketBlock(key, m.Team1.Name, m.ScoreTeam1, m.ScoreTeam2, m.Team2.Name);
+                    }
+                }
             }
         }
 
+        /// ---------------------------------------------------
+        /// Updates the staff window with the current and next
+        /// match keys for all fields.
+        /// ---------------------------------------------------
         private void UpdateKeys(object sender, EventArgs e)
         {
             if (Application.OpenForms.Count > 0)
@@ -367,6 +433,11 @@ namespace ChassieuVolleyTournament
             string[] nextKeys = new string[3] {_currentPhase.NextMatchField1.GetMatchKey(), _currentPhase.NextMatchField2.GetMatchKey(), _currentPhase.NextMatchField3.GetMatchKey()};
             _staffWindow.UpdateKeysLabels(currentKeys, nextKeys);
         }
+
+        /// --------------------------------------------------
+        /// Refreshes the ranking tables for all pools in the
+        /// current phase.
+        /// --------------------------------------------------
         public void RefreshAllPoolsRanking()
         {
             if (_currentPhase is PoolPhase poolPhase)
@@ -378,7 +449,6 @@ namespace ChassieuVolleyTournament
                 {
                     var pool = pools[poolIndex];
 
-                    // Recalculate standings
                     pool.UpdateRanking();
 
                     string[] teamNames = new string[pool.GetTeams().Count];
@@ -404,6 +474,10 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        /// --------------------------------------------------
+        /// Updates a team name in all matches of the current
+        /// pool phase.
+        /// --------------------------------------------------
         public void UpdateTeamNameInAllMatches(string oldName, string newName)
         {
             foreach(var pool in (_currentPhase as PoolPhase).GetPools())
@@ -425,25 +499,36 @@ namespace ChassieuVolleyTournament
 
         }
 
-
+        /// ------------------------------------------------
+        /// Adds a valid key to the set of recognized keys.
+        /// ------------------------------------------------
         public void AddValidKey(string key)
         {
             _validKeys.Add(key);
         }
 
+        /// ----------------------------------------------------
+        /// Checks if a key is valid in the tournament context.
+        /// ----------------------------------------------------
         public bool IsValidKey(string key)
         {
             return _validKeys.Contains(key);
         }
 
+        /// ---------------------------
+        /// Raises the EndPhase event.
+        /// ---------------------------
         public void RaiseEndPhase()
         {
             EndPhase?.Invoke(this, EventArgs.Empty);
         }
-        
+
+        /// ----------------------------------------------------
+        /// Updates the timer by the elapsed time and refreshes
+        /// the display window's timer text.
+        /// ----------------------------------------------------
         public void CycleTimer(Stopwatch Stopwatch)
         {
-            // establish baseline on first call to avoid huge delta (and instant stop)
             long currentTime = Stopwatch.ElapsedMilliseconds;
             if (_lastTimerTime == 0)
             {
@@ -471,12 +556,34 @@ namespace ChassieuVolleyTournament
         #endregion
 
         #region ---- Getters & Setters ----
-        public void StartTimer(bool IsMatch = true)
+
+        /// -----------------------------------------------
+        /// Gets the singleton instance of the tournament.
+        /// -----------------------------------------------
+        public static Tournament Instance => _instance.Value;
+
+        /// ----------------------------------------------------------
+        /// Assigns the display and staff windows for the tournament.
+        /// ----------------------------------------------------------
+        public void SetWindows(DisplayWindow display, StaffWindow staff)
         {
-            _lastTimerTime = 0; // reset baseline
-            _timer.StartTimer(IsMatch);
+            _displayWindow = display;
+            _staffWindow = staff;
         }
 
+        /// -------------------------------------------------------
+        /// Sets the current phase and updates the display window.
+        /// -------------------------------------------------------
+        public void SetCurrentPhase(Phase phase)
+        {
+            _currentPhase = phase;
+            UpdateWindowTexts(null, EventArgs.Empty);
+        }
+
+        /// ------------------------------------------------
+        /// Gets a match by its unique key. Returns null if
+        /// the key is invalid or match not found.
+        /// ------------------------------------------------
         public Match GetMatchByKey(string key)
         {
             if (!IsValidKey(key))
@@ -495,10 +602,26 @@ namespace ChassieuVolleyTournament
                     }
                 }
             }
+            else
+            {
+                foreach (Match match in _finalBracket.GetMatches())
+                {
+                    if (match.Key == key)
+                        return match;
+                }
+            }
 
             return null;
         }
 
+        /// -------------------------------------------
+        /// Starts the corresponding tournament timer.
+        /// -------------------------------------------
+        public void StartTimer(bool IsMatch = true)
+        {
+            _lastTimerTime = 0;
+            _timer.StartTimer(IsMatch);
+        }
         public void StopTimer() => _timer.StopTimer();
         public DisplayWindow GetDisplayWindow() => _displayWindow;
         public StaffWindow GetStaffWindow() => _staffWindow;

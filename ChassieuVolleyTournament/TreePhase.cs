@@ -1,18 +1,27 @@
-﻿using System;
+﻿#region ----Includes ----
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
+#endregion
 
 namespace ChassieuVolleyTournament
 {
+    /// ----------------------------------------------------
+    /// Represents the elimination phase of the tournament,
+    /// including both the principal bracket and the
+    /// consolation bracket. Generates matches and displays
+    /// them on the display window.
+    /// ----------------------------------------------------
     internal class TreePhase : Phase
     {
         #region ---- Properties ----
 
-        List<Match> matchesPrincipal;
-        List<Match> matchesConsolante;
+        private List<Match> matchesPrincipal;
+        private List<Match> matchesConsolante;
 
+        /// --------------------------------------------------
+        /// Placeholder teams used for initial empty matches.
+        /// --------------------------------------------------
         Team placeHolder1;
         Team placeHolder2;
 
@@ -20,6 +29,10 @@ namespace ChassieuVolleyTournament
 
         #region ---- Constructor ----
 
+        /// -----------------------------------------------------
+        /// Initializes a new instance of the TreePhase class
+        /// and sets up placeholder teams and empty match lists.
+        /// -----------------------------------------------------
         public TreePhase()
         {
             matchesPrincipal = new List<Match>();
@@ -33,6 +46,11 @@ namespace ChassieuVolleyTournament
 
         #region ---- Methods ----
 
+        /// -----------------------------------------------------------
+        /// Generates all matches for the tree phase based on
+        /// the provided pools for principal and consolation brackets.
+        /// Also displays the initial matches on the display window.
+        /// -----------------------------------------------------------
         public void GenerateMatches(Pool pool1, Pool pool2, Pool pool3, Pool pool4)
         {
             for (int i = 0; i < 4; i++)
@@ -46,12 +64,21 @@ namespace ChassieuVolleyTournament
             for (int i = 0; i < 4; i++)
             {
                 matchesPrincipal.Add(tempMatch);
+
+                tempMatch = new Match(placeHolder1, placeHolder2);
+
                 matchesConsolante.Add(tempMatch);
+
+                tempMatch = new Match(placeHolder1, placeHolder2);
             }
 
             DisplayMatchesOnWindow();
         }
 
+        /// ------------------------------------------------
+        /// Updates the display window to show all matches
+        /// in both the principal and consolation brackets.
+        /// ------------------------------------------------
         private void DisplayMatchesOnWindow()
         {
             var display = Tournament.Instance.GetDisplayWindow();
@@ -78,6 +105,42 @@ namespace ChassieuVolleyTournament
 
             display.Update();
         }
+
+        #endregion
+
+        #region ---- Getters & Setters ----
+
+        /// -------------------------------------------------
+        /// Returns the match corresponding to the given key
+        /// in either the principal or consolation bracket.
+        /// -------------------------------------------------
+        public Match GetMatchByKey(string key)
+        {
+            if (key.StartsWith("P_QF"))
+                return matchesPrincipal[int.Parse(key.Substring(4)) - 1];
+            if (key.StartsWith("C_QF"))
+                return matchesConsolante[int.Parse(key.Substring(4)) - 1];
+
+            if (key.StartsWith("P_SF"))
+                return matchesPrincipal[3 + int.Parse(key.Substring(4))];
+            if (key.StartsWith("C_SF"))
+                return matchesConsolante[3 + int.Parse(key.Substring(4))];
+
+            if (key == "P_FINAL") return matchesPrincipal[6];
+            if (key == "C_FINAL") return matchesConsolante[6];
+            if (key == "P_3RD") return matchesPrincipal[7];
+            if (key == "C_3RD") return matchesConsolante[7];
+
+            return null;
+        }
+
+        public List<Match> MatchsPrincipal => matchesPrincipal;
+        public List<Match> MatchsConsolant => matchesConsolante;
+
+        /// ----------------------------------------------------------------
+        /// Returns all matches (principal + consolation) as a single list.
+        /// ----------------------------------------------------------------
+        public List<Match> GetMatches() => matchesPrincipal.Concat(matchesConsolante).ToList();
 
         #endregion
     }

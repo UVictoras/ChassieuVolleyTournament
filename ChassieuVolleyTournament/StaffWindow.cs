@@ -7,6 +7,14 @@ using System.Windows.Forms;
 
 namespace ChassieuVolleyTournament
 {
+    /// -------------------------------------------------------------------------------------
+    /// StaffWindow is a dedicated form for tournament staff to monitor and manage:
+    /// - All teams’ statistics (points scored, points conceded, tournament points, ranking)
+    /// - Current and next match keys for each field
+    /// - Editable fields to update team names and stats
+    /// - Buttons to control timers and phases
+    /// - Tree-phase matches in knockout stages
+    /// -------------------------------------------------------------------------------------
     public class StaffWindow : Form
     {
         #region ---- Properties ----
@@ -24,6 +32,12 @@ namespace ChassieuVolleyTournament
         #endregion
 
         #region ---- Constructor ----
+
+        /// ---------------------------------------------------------
+        /// Initializes the StaffWindow
+        /// Sets up the basic form settings and main panel.
+        /// Layout finalization is deferred until the form is shown.
+        /// ---------------------------------------------------------
         public StaffWindow()
         {
             Text = "Infos priv\u00e9es du tournoi";
@@ -48,9 +62,14 @@ namespace ChassieuVolleyTournament
 
         #region ---- Methods ----
 
+        /// -------------------------------------------------------
+        /// Constructs the UI:
+        /// - Team table (editable names, scores, points, ranking)
+        /// - Labels for current and next match keys
+        /// - Buttons for timers, next phase, and pause
+        /// -------------------------------------------------------
         private void FinalizeLayout()
         {
-            // === TABLE: Team Data ===
             var table = new TableLayoutPanel
             {
                 Dock = DockStyle.Top,
@@ -115,11 +134,9 @@ namespace ChassieuVolleyTournament
                                     string oldName = Tournament.Instance.Teams[capturedRow].Name;
                                     Tournament.Instance.Teams[capturedRow].Name = newName;
 
-                                    // ✅ Update matches where this name appears
                                     Tournament.Instance.UpdateTeamNameInAllMatches(oldName, newName);
                                 }
 
-                                // Optional: update display window too
                                 var display = Tournament.Instance.GetDisplayWindow();
                                 display?.UpdateTeamNameInMatches(oldTeamName, newName);
 
@@ -127,13 +144,9 @@ namespace ChassieuVolleyTournament
                                 e.Handled = true;
                             }
                         };
-
-                        // Optionally, you can remove the TextChanged event handler since it's no longer needed.
                     }
-
                     else if (c == 5)
                     {
-                        // Ranking
                         tb.Text = ((r % 4) + 1).ToString();
                     }
                     else
@@ -143,7 +156,6 @@ namespace ChassieuVolleyTournament
                         capturedRow = r;
                         int capturedCol = c;
 
-                        // Make Difference column (col 3) read-only since it's auto-calculated
                         if (capturedCol == 3)
                         {
                             tb.ReadOnly = true;
@@ -164,7 +176,6 @@ namespace ChassieuVolleyTournament
                                         {
                                             team.Name = newText;
 
-                                            // Update name in the display
                                             var display = Tournament.Instance.GetDisplayWindow();
                                             display?.UpdateTeamNameInMatches(oldName, newText);
                                         }
@@ -186,16 +197,13 @@ namespace ChassieuVolleyTournament
                                         break;
                                 }
 
-                                // Auto-update Difference when Scored or Taken changes
                                 team.Statistics.Difference = team.Statistics.ScoredPoints - team.Statistics.TakenPoints;
                                 textFields[capturedRow, 3].Text = team.Statistics.Difference.ToString();
 
-                                // Refresh display
                                 var displayRefresh = Tournament.Instance.GetDisplayWindow();
                                 displayRefresh?.Update();
                             };
 
-                            // === NEW: Press Enter to force ranking refresh ===
                             tb.KeyDown += (s, e) =>
                             {
                                 if (e.KeyCode == Keys.Enter)
@@ -214,11 +222,10 @@ namespace ChassieuVolleyTournament
 
             mainPanel.Controls.Add(table);
 
-            // === TABLE: Match Keys ===
             var keyTable = new TableLayoutPanel
             {
-                Dock = DockStyle.Top, // was Fill
-                AutoSize = true,      // ensures full height
+                Dock = DockStyle.Top,
+                AutoSize = true,     
                 RowCount = 2,
                 ColumnCount = 3,
                 Padding = new Padding(20),
@@ -256,7 +263,6 @@ namespace ChassieuVolleyTournament
 
             mainPanel.Controls.Add(keyTable);
 
-            // === BUTTONS ===
             var buttonPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
@@ -291,6 +297,173 @@ namespace ChassieuVolleyTournament
             mainPanel.Controls.Add(buttonPanel);
         }
 
+        /// ----------------------------------------------------------------------------
+        /// Rebuilds the UI specifically for the knockout/tree phase of the tournament.
+        /// Clears the previous layout and creates a structured view of:
+        /// - Quarter-finals
+        /// - Semi-finals
+        /// - Finals
+        /// - Third place matches
+        /// ----------------------------------------------------------------------------
+        public void RebuildForTreePhase()
+        {
+            var treePhase = Tournament.Instance.GetCurrentPhase() as TreePhase;
+            if (treePhase == null) return;
+
+            mainPanel.Controls.Clear();
+
+            var table = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                Padding = new Padding(20),
+                ColumnCount = 4,
+                RowCount = 10, 
+                BackColor = BackColor,
+                AutoSize = true
+            };
+
+            string[] roundLabels = { "Quarts de finale", "Demi-finales", "Finale", "Match 3ème place" };
+            for (int i = 0; i < roundLabels.Length; i++)
+            {
+                var lbl = new Label
+                {
+                    Text = roundLabels[i],
+                    Dock = DockStyle.Top,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    BackColor = Color.FromArgb(15, 60, 100),
+                    Margin = new Padding(5)
+                };
+                table.Controls.Add(lbl, i, 0);
+            }
+
+            int row = 1;
+
+            for (int i = 0; i < 4; i++)
+            {
+                table.Controls.Add(CreateMatchPanel("P_QF" + (i + 1), treePhase), 0, row++);
+                table.Controls.Add(CreateMatchPanel("C_QF" + (i + 1), treePhase), 0, row++);
+            }
+
+            row = 1;
+            for (int i = 0; i < 2; i++)
+            {
+                table.Controls.Add(CreateMatchPanel("P_SF" + (i + 1), treePhase), 1, row++);
+                table.Controls.Add(CreateMatchPanel("C_SF" + (i + 1), treePhase), 1, row++);
+            }
+
+            table.Controls.Add(CreateMatchPanel("P_FINAL", treePhase), 2, 1);
+            table.Controls.Add(CreateMatchPanel("C_FINAL", treePhase), 2, 2);
+
+            table.Controls.Add(CreateMatchPanel("P_3RD", treePhase), 3, 1);
+            table.Controls.Add(CreateMatchPanel("C_3RD", treePhase), 3, 2);
+
+            mainPanel.Controls.Add(table);
+        }
+
+        /// -------------------------------------------------------------------------------
+        /// Creates a panel displaying a single match (team1 vs team2) for the tree phase.
+        /// Includes editable textboxes for team names and a label for the match key.
+        /// Updates the main display when names are modified.
+        /// 
+        /// matchKey : The match identifier (e.g., "P_QF1")
+        /// treePhase : Reference to the TreePhase instance
+        /// --------------------------------------------------------------------------------
+        private Panel CreateMatchPanel(string matchKey, TreePhase treePhase)
+        {
+            var matchPanel = new Panel
+            {
+                BorderStyle = BorderStyle.FixedSingle,
+                AutoSize = true,
+                Padding = new Padding(5),
+                Margin = new Padding(5),
+                BackColor = Color.White,
+                ForeColor = Color.Black
+            };
+
+            var match = treePhase.GetMatchByKey(matchKey);
+            if (match == null) return matchPanel;
+
+            var txtTeam1 = new TextBox
+            {
+                Text = match.Team1?.Name ?? "???",
+                AutoSize = true,
+                Font = new Font("Segoe UI", 10),
+                Margin = new Padding(2)
+            };
+
+            var txtTeam2 = new TextBox
+            {
+                Text = match.Team2?.Name ?? "???",
+                AutoSize = true,
+                Font = new Font("Segoe UI", 10),
+                Margin = new Padding(2)
+            };
+
+            var lblKey = new Label
+            {
+                Text = match.GetMatchKey(),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                Margin = new Padding(2)
+            };
+
+            Action updateDisplay = () =>
+            {
+                match.Team1.Name = txtTeam1.Text;
+                match.Team2.Name = txtTeam2.Text;
+
+                Tournament.Instance.GetDisplayWindow()
+                    ?.UpdateBracketBlock(
+                        matchKey,
+                        match.Team1.Name,
+                        match.ScoreTeam1,
+                        match.ScoreTeam2,
+                        match.Team2.Name
+                    );
+            };
+
+            txtTeam1.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    updateDisplay();
+                    e.Handled = true;
+                    e.SuppressKeyPress = true; 
+                }
+            };
+
+            txtTeam2.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter)
+                {
+                    updateDisplay();
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                }
+            };
+
+            var flow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+
+            flow.Controls.Add(lblKey);
+            flow.Controls.Add(txtTeam1);
+            flow.Controls.Add(new Label { Text = "vs", AutoSize = true, Margin = new Padding(5, 2, 5, 2) });
+            flow.Controls.Add(txtTeam2);
+
+            matchPanel.Controls.Add(flow);
+            return matchPanel;
+        }
+
+        /// --------------------------------------------------------------
+        /// Helper to create a styled action button for the staff window.
+        /// --------------------------------------------------------------
         private Button CreateActionButton(string text, Color backColor, EventHandler onClick)
         {
             var btn = new Button
@@ -309,6 +482,9 @@ namespace ChassieuVolleyTournament
             return btn;
         }
 
+        /// -----------------------------------------------------------------------
+        /// Updates the labels for the current and next match keys for each field.
+        /// -----------------------------------------------------------------------
         public void UpdateKeysLabels(string[] NewCurrentMatchsKeys, string[] NewNextMatchsKeys)
         {
             for (int i = 0; i < 3; i++)
@@ -322,6 +498,9 @@ namespace ChassieuVolleyTournament
 
         #region ---- Getters & Setters ----
 
+        /// --------------------------------------------------
+        /// Update the data for a specific team in the table.
+        /// --------------------------------------------------
         public void SetTeamData(int row, string name,
             int scored, int taken, int diff, int points, int rank)
         {
@@ -334,11 +513,18 @@ namespace ChassieuVolleyTournament
             textFields[row, 5].Text = rank.ToString();
         }
 
+        /// -----------------------------------------------------------------
+        /// Updates the label for the current match key of a specific field.
+        /// -----------------------------------------------------------------
         public void SetCurrentMatchKey(int idx, string key)
         {
             if (idx < 0 || idx >= currentMatchKeyLabels.Length) return;
             currentMatchKeyLabels[idx].Text = $"Cl\u00e9 Terrain Actuel {idx + 1}: {key}";
         }
+
+        /// --------------------------------------------------------------
+        /// Updates the label for the next match key of a specific field.
+        /// --------------------------------------------------------------
 
         public void SetNextMatchKey(int idx, string key)
         {
@@ -346,12 +532,19 @@ namespace ChassieuVolleyTournament
             nextMatchKeyLabels[idx].Text = $"Cl\u00e9 Match Suivant {idx + 1}: {key}";
         }
 
+        /// --------------------------------------------
+        /// Update the names of all teams in the table.
+        /// --------------------------------------------
         public void SetTeamNames(string[] names)
         {
             for (int i = 0; i < names.Length; i++)
                 textFields[i, 0].Text = names[i];
         }
-        #endregion
+        
+        /// -----------------------------------------------------------------------------------
+        /// Updates ranking-related columns for a specific pool of teams.
+        /// Updates both text (names, differences, points) and numerical stats (scored/taken).
+        /// -----------------------------------------------------------------------------------
         public void SetRankingText(int poolIndex, string[] teamNames, string[] teamDiffs, string[] teamPoints, int[] scoredPoints, int[] takenPoints)
         {
             int teamsPerPool = 4;
@@ -367,9 +560,15 @@ namespace ChassieuVolleyTournament
                 textFields[row, 4].Text = teamPoints[i];
             }
         }
+        #endregion
+
     }
 
     #region ---- Helper ----
+
+    /// -----------------------------------------------------------
+    /// Extension method to iterate over arrays with index access.
+    /// -----------------------------------------------------------
     public static class ArrayExtensions
     {
         public static void ForEach<T>(this T[] arr, Action<T, int> action)

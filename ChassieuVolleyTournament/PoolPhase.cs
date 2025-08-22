@@ -1,9 +1,17 @@
-﻿using System;
+﻿#region ---- Includes ----
+using System;
 using System.Linq;
 using System.Windows.Forms;
 
+#endregion
+
 namespace ChassieuVolleyTournament
 {
+    /// -------------------------------------------------------
+    /// Represents the pool phase of the tournament,
+    /// managing multiple pools and cycling matches
+    /// across three fields. Updates team scores and rankings.
+    /// -------------------------------------------------------
     internal class PoolPhase : Phase
     {
         #region ---- Properties ----
@@ -23,6 +31,12 @@ namespace ChassieuVolleyTournament
         #endregion
 
         #region ---- Constructor ----
+
+        /// -------------------------------------------------------
+        /// Initializes a new PoolPhase with the given four pools,
+        /// sets up match/pool indexing for each field, and
+        /// initializes the first set of matches.
+        /// -------------------------------------------------------
         public PoolPhase(Pool pool1, Pool pool2, Pool pool3, Pool pool4)
         {
             pools = new Pool[4];
@@ -49,9 +63,13 @@ namespace ChassieuVolleyTournament
         #endregion
 
         #region ---- Methods ----
+        /// ------------------------------------------------------------
+        /// Advances the current matches on each field to the next
+        /// scheduled match in the pools, and updates the next matches.
+        /// Handles UI thread invocation if necessary.
+        /// ------------------------------------------------------------
         public void CycleMatches(object sender, EventArgs e)
         {
-            // if you need to touch UI controls, wrap them like this:
             if (Application.OpenForms.Count > 0)
             {
                 var mainForm = Application.OpenForms[0];
@@ -79,10 +97,13 @@ namespace ChassieuVolleyTournament
             NextMatchField3 = pools[field3PoolsIndexes[currentIndex]].GetMatches()[field3MatchsIndexes[currentIndex]];
         }
 
-        // Called when Timer.StopTimer() fires
+        /// ------------------------------------------------------
+        /// Updates scores and statistics for the current matches
+        /// when the timer stops. Also refreshes rankings in the
+        /// display and staff windows.
+        /// ------------------------------------------------------
         public void IncrementTeamsScores(object sender, EventArgs e)
         {
-            // if you need to touch UI controls, wrap them like this:
             if (Application.OpenForms.Count > 0)
             {
                 var mainForm = Application.OpenForms[0];
@@ -94,23 +115,20 @@ namespace ChassieuVolleyTournament
             }
 
             var display = Tournament.Instance.GetDisplayWindow();
-            var staffWindow = Tournament.Instance.GetStaffWindow();  // <-- get staff window reference
+            var staffWindow = Tournament.Instance.GetStaffWindow(); 
 
-            // Ensure UI thread for display window
             if (display != null && display.InvokeRequired)
             {
                 display.Invoke((MethodInvoker)(() => IncrementTeamsScores(sender, e)));
                 return;
             }
 
-            // Ensure UI thread for staff window
             if (staffWindow != null && staffWindow.InvokeRequired)
             {
                 staffWindow.Invoke((MethodInvoker)(() => IncrementTeamsScores(sender, e)));
                 return;
             }
 
-            // Update points & stats for the three current matches (your existing logic)
             UpdateMatchPoints(CurrentMatchField1);
             UpdateTeamStats(CurrentMatchField1);
 
@@ -120,7 +138,6 @@ namespace ChassieuVolleyTournament
             UpdateMatchPoints(CurrentMatchField3);
             UpdateTeamStats(CurrentMatchField3);
 
-            // If no display window yet, just stop here (still updates model)
             if (display == null)
                 return;
 
@@ -150,10 +167,8 @@ namespace ChassieuVolleyTournament
                     teamTakenPoints[i] = team.Statistics.TakenPoints;
                 }
 
-                // Update main display
                 display.SetRankingText(poolIndex, teamNames, teamDiffs, teamPoints);
-
-                // Also update staff window if available
+   
                 if (staffWindow != null)
                 {
                     staffWindow.SetRankingText(poolIndex, teamNames, teamDiffs, teamPoints, teamScoredPoints, teamTakenPoints);
@@ -168,6 +183,9 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        /// -----------------------------------------------------------
+        /// Updates tournament points for a match based on the scores.
+        /// -----------------------------------------------------------
         private void UpdateMatchPoints(Match match)
         {
             if (match.Team1Score > match.Team2Score)
@@ -187,6 +205,10 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        /// ----------------------------------------------------
+        /// Updates scored points, taken points, and difference
+        /// for both teams in a match.
+        /// ----------------------------------------------------
         private void UpdateTeamStats(Match match)
         {
             match.Team1.Statistics.ScoredPoints += match.Team1Score;

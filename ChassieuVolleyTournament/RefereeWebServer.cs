@@ -6,23 +6,36 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+
 #endregion
 
 namespace ChassieuVolleyTournament
 {
+    /// ----------------------------------------------------
+    /// Handles a simple web server for referees,
+    /// allowing score updates, undo actions, and
+    /// team name inversion for matches identified by keys.
+    /// ----------------------------------------------------
     public class RefereeWebServer
     {
         #region ---- Properties ----
         private HashSet<string> validKeys;
-        private readonly Dictionary<string, Team[]> keyToTeams;
-        private readonly Dictionary<string, bool> keyInverted;
-        private readonly Dictionary<string, int[]> keyScores;
-        private readonly Dictionary<string, Stack<int>> lastModifiedTeam;
+
+        private readonly Dictionary<string, Team[]>             keyToTeams;
+        private readonly Dictionary<string, bool>               keyInverted;
+        private readonly Dictionary<string, int[]>              keyScores;
+        private readonly Dictionary<string, Stack<int>>         lastModifiedTeam;
+
         private readonly string url;
+
         private readonly Control uiControl;
         #endregion
 
         #region ---- Constructor ----
+        /// ---------------------------------------------------
+        /// Initializes a new RefereeWebServer instance
+        /// with a set of valid keys and UI control reference.
+        /// ---------------------------------------------------
         public RefereeWebServer(IEnumerable<string> keys, Control uiControl, string urlPrefix = "http://+:8080/")
         {
             this.uiControl = uiControl ?? throw new ArgumentNullException(nameof(uiControl));
@@ -44,22 +57,11 @@ namespace ChassieuVolleyTournament
         }
         #endregion
 
-        #region ---- Getters & Setters ----
-        public void SetInfoForKey(string key, string info)
-        {
-            if (validKeys.Contains(key))
-            {
-                var split = info.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
-                if (split.Length == 2)
-                {
-                    keyToTeams[key][0].Name = split[0].Trim();
-                    keyToTeams[key][1].Name = split[1].Trim();
-                }
-            }
-        }
-        #endregion
-
         #region ---- Methods & Tasks ----
+
+        /// --------------------------------------------------------
+        /// Starts the HTTP listener and handles incoming requests.
+        /// --------------------------------------------------------
         public async Task Start()
         {
             HttpListener listener = new HttpListener();
@@ -75,6 +77,9 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        /// ----------------------------------
+        /// Processes incoming HTTP requests.
+        /// ----------------------------------
         private async Task HandleRequest(HttpListenerContext context)
         {
             var request = context.Request;
@@ -145,6 +150,9 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        /// ----------------------------------------------
+        /// Updates the tournament match score for a key.
+        /// ----------------------------------------------
         private void UpdateTournamentMatchScore(string key)
         {
             if (!validKeys.Contains(key)) return;
@@ -163,6 +171,9 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        /// -------------------------------------------
+        /// Serves the HTML scoreboard page for a key.
+        /// -------------------------------------------
         private async Task ServeScoreboardPage(HttpListenerResponse response, string key)
         {
             var match = Tournament.Instance.GetMatchByKey(key);
@@ -292,6 +303,9 @@ namespace ChassieuVolleyTournament
             await RespondAsync(response, html);
         }
 
+        /// ---------------------------------------------
+        /// Generates an error HTML page with a message.
+        /// ---------------------------------------------
         private string GenerateErrorPage(string message)
         {
             return $@"<!DOCTYPE html>
@@ -304,6 +318,9 @@ namespace ChassieuVolleyTournament
             </html>";
         }
 
+        /// ------------------------------------
+        /// Generates the login form HTML page.
+        /// ------------------------------------
         private string GenerateLoginForm()
         {
             return @"<!DOCTYPE html>
@@ -319,6 +336,9 @@ namespace ChassieuVolleyTournament
             </html>";
         }
 
+        /// -----------------------------------
+        /// Sends HTML response to the client.
+        /// -----------------------------------
         private async Task RespondAsync(HttpListenerResponse response, string html)
         {
             byte[] buffer = Encoding.UTF8.GetBytes(html);
@@ -327,10 +347,23 @@ namespace ChassieuVolleyTournament
             await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             response.OutputStream.Close();
         }
-        #endregion
 
-        #region ---- Getters & Setters ----
+        /// -------------------------------------
+        /// Clears all keys and associated data.
+        /// -------------------------------------
+        public void ResetKeys()
+        {
+            validKeys.Clear();
 
+            keyToTeams.Clear();
+            keyInverted.Clear();
+            keyScores.Clear();
+            lastModifiedTeam.Clear();
+        }
+
+        /// -------------------------------------------------------
+        /// Adds new valid keys along with their associated teams.
+        /// -------------------------------------------------------
         public void AddValidKeys(Dictionary<string, Team[]> keysWithTeams)
         {
             foreach (var kvp in keysWithTeams)
@@ -350,6 +383,25 @@ namespace ChassieuVolleyTournament
             }
         }
 
+        #endregion
+
+        #region ---- Getters & Setters ----
+
+        /// ---------------------------------
+        /// Sets team names for a given key.
+        /// ---------------------------------
+        public void SetInfoForKey(string key, string info)
+        {
+            if (validKeys.Contains(key))
+            {
+                var split = info.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+                if (split.Length == 2)
+                {
+                    keyToTeams[key][0].Name = split[0].Trim();
+                    keyToTeams[key][1].Name = split[1].Trim();
+                }
+            }
+        }
 
         #endregion
     }

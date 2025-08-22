@@ -76,11 +76,34 @@ namespace ChassieuVolleyTournament
             validKeysWithTeams = new Dictionary<string, Team[]>();
 
             var phase = Tournament.Instance.GetCurrentPhase() as PoolPhase;
-            if (phase == null) return;
-
-            foreach (Pool pool in phase.GetPools())
+            if (phase != null)
             {
-                foreach (Match match in pool.Matches)
+                foreach (Pool pool in phase.GetPools())
+                {
+                    foreach (Match match in pool.Matches)
+                    {
+                        if (!string.IsNullOrEmpty(match.Key))
+                        {
+                            validKeysWithTeams[match.Key] = new Team[] { match.Team1, match.Team2 };
+                        }
+                    }
+                }
+            }
+            else
+            {
+                var FinalPhase = Tournament.Instance.GetCurrentPhase() as TreePhase;
+
+                if (FinalPhase == null) return;
+
+                foreach (Match match in FinalPhase.MatchsPrincipal)
+                {
+                    if (!string.IsNullOrEmpty(match.Key))
+                    {
+                        validKeysWithTeams[match.Key] = new Team[] { match.Team1, match.Team2 };
+                    }
+                }
+
+                foreach (Match match in FinalPhase.MatchsConsolant)
                 {
                     if (!string.IsNullOrEmpty(match.Key))
                     {
@@ -88,6 +111,8 @@ namespace ChassieuVolleyTournament
                     }
                 }
             }
+
+            
         }
 
         /// ----------------------------------------------------
@@ -141,6 +166,11 @@ namespace ChassieuVolleyTournament
             GiveWebServerKeys();
 
             await refereeWebServer.Start();
+        }
+
+        public static void TriggerResetWebServer()
+        {
+            refereeWebServer.ResetKeys();
         }
 
         #endregion
