@@ -187,8 +187,8 @@ namespace ChassieuVolleyTournament
             };
             Controls.Add(dividerLine);
 
-            BuildBracket((ClientSize.Width - 1100) / 2, 100, "P"); 
-            BuildBracket((ClientSize.Width - 1100) / 2, ClientSize.Height / 2 + 100, "C");
+            BuildBracket((ClientSize.Width - 1100) / 2 - 110, 100, "P"); 
+            BuildBracket((ClientSize.Width - 1100) / 2 - 110, ClientSize.Height / 2 + 100, "C");
 
             logo = new PictureBox
             {
