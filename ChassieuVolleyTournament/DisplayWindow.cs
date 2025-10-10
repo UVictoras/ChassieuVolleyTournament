@@ -116,7 +116,7 @@ namespace ChassieuVolleyTournament
             {
                 Image = Image.FromFile("../../Images/ChassieuLogo.png"),
                 SizeMode = PictureBoxSizeMode.Zoom,
-                Size = new Size(120, 120)
+                Size = new Size(150, 150)
             };
             matchAreaPanel.Controls.Add(logo);
 
@@ -155,7 +155,7 @@ namespace ChassieuVolleyTournament
 
                 Label refereeLabel = new Label
                 {
-                    Text = $"Arbitre : Équipe {i + 4}",
+                    Text = $"Arbitre : \r\nÉquipe {i + 4}",
                     Font = new Font("Segoe UI", 16, FontStyle.Italic),
                     ForeColor = Color.White,
                     AutoSize = true,
@@ -822,7 +822,7 @@ namespace ChassieuVolleyTournament
             // Si le label existe déjà, on met simplement à jour le texte
             if (refereeLabels[courtIndex] != null)
             {
-                refereeLabels[courtIndex].Text = $"Arbitre : {refereeName}";
+                refereeLabels[courtIndex].Text = $"Arbitre : \r\n{refereeName}";
             }
         }
 

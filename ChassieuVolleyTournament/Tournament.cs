@@ -80,9 +80,11 @@ namespace ChassieuVolleyTournament
             Pool[] tempPools = new Pool[4];
             Pool tempPool;
 
+            string[] teamNames = { "Aliexpress", "Les 4 Fantasques", "Aymard", "Mojito", "Bounniz", "Les fratés", "PanOx", "Les Vollaylles", "Zimbra", "Éclatés au sol", "Les pipous", "Namasté", "Fixouille", "Black Mamba", "Les Crazy Dinos", "Ti-Punch"};
+ 
             for (int i = 0; i < Teams.Length; i++)
             {
-                tempTeam = new Team("Équipe " + i.ToString());
+                tempTeam = new Team(teamNames[i]);
                 Teams[i] = tempTeam;
             }
 
