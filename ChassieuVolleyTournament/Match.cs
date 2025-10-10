@@ -15,7 +15,7 @@
         public int ScoreTeam2 { get; set; }
         #endregion
 
-        #region ---- Constructor ----
+        #region ---- Constructors ----
         /// ------------------------------------------------------------
         /// Initializes a match with two teams, generates a unique key,
         /// and registers the key in the tournament.
@@ -30,6 +30,19 @@
             Key = PrivateKeyGenerator.Instance.GenerateKey();
             Tournament.Instance.AddValidKey(Key);
         }
+
+        public Match(Team team1, Team team2, Team refereeTeam)
+        {
+            Team1 = team1;
+            Team2 = team2;
+            ScoreTeam1 = 0;
+            ScoreTeam2 = 0;
+            RefereeTeam = refereeTeam;
+
+            Key = PrivateKeyGenerator.Instance.GenerateKey();
+            Tournament.Instance.AddValidKey(Key);
+        }
+
         #endregion
 
         #region ---- Getters & Setters ----

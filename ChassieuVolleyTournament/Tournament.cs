@@ -113,6 +113,16 @@ namespace ChassieuVolleyTournament
                 TeamNames[k] = Teams[k].Name;
             }
 
+            for (int i = 0; i < 4; i++)
+            {
+                var pool = _morningPhase.GetPools()[i];
+                string[] names = pool.GetTeams().Select(t => t.Name).ToArray();
+                string[] diffs = pool.GetTeams().Select(t => t.Statistics.Difference.ToString()).ToArray();
+                string[] points = pool.GetTeams().Select(t => t.Statistics.TournamentPoints.ToString()).ToArray();
+
+                _displayWindow.SetRankingText(i, names, diffs, points);
+            }
+
             _staffWindow.SetTeamNames(TeamNames);
 
             _staffWindow.SetCurrentMatchKey(0, (_currentPhase as PoolPhase).CurrentMatchField1.Key);
@@ -148,6 +158,8 @@ namespace ChassieuVolleyTournament
 
             if (_displayWindow == null || _currentPhase == null)
                 return;
+
+            _displayWindow.PoolLayout();
 
             EndPhase -= InitializeLevelPhase;
 
@@ -233,17 +245,17 @@ namespace ChassieuVolleyTournament
             _displayWindow.SetNextMatchText(0,
                 _levelPhase.NextMatchField1.Team1.Name,
                 _levelPhase.NextMatchField1.Team2.Name,
-                "Referee");
+                _levelPhase.NextMatchField1.RefereeTeam.Name);
 
             _displayWindow.SetNextMatchText(1,
                 _levelPhase.NextMatchField2.Team1.Name,
                 _levelPhase.NextMatchField2.Team2.Name,
-                "Referee");
+                _levelPhase.NextMatchField2.RefereeTeam.Name);
 
             _displayWindow.SetNextMatchText(2,
                 _levelPhase.NextMatchField3.Team1.Name,
                 _levelPhase.NextMatchField3.Team2.Name,
-                "Referee");
+                _levelPhase.NextMatchField3.RefereeTeam.Name);
 
 
             UpdateLiveScores();
@@ -314,11 +326,15 @@ namespace ChassieuVolleyTournament
                 _currentPhase.CurrentMatchField1.GetScoreTeamOne(),
                 _currentPhase.CurrentMatchField1.GetScoreTeamTwo());
 
+            _displayWindow.UpdateReferee(0, _currentPhase.CurrentMatchField1.RefereeTeam?.Name);
+
             _displayWindow.SetFieldText(1,
                 _currentPhase.CurrentMatchField2.GetTeam1Name(),
                 _currentPhase.CurrentMatchField2.GetTeam2Name(),
                 _currentPhase.CurrentMatchField2.GetScoreTeamOne(),
                 _currentPhase.CurrentMatchField2.GetScoreTeamTwo());
+
+            _displayWindow.UpdateReferee(1, _currentPhase.CurrentMatchField2.RefereeTeam?.Name);
 
             _displayWindow.SetFieldText(2,
                 _currentPhase.CurrentMatchField3.GetTeam1Name(),
@@ -326,22 +342,24 @@ namespace ChassieuVolleyTournament
                 _currentPhase.CurrentMatchField3.GetScoreTeamOne(),
                 _currentPhase.CurrentMatchField3.GetScoreTeamTwo());
 
+            _displayWindow.UpdateReferee(2, _currentPhase.CurrentMatchField3.RefereeTeam?.Name);
+
             if (_currentPhase.CurrentMatchField1 != _currentPhase.NextMatchField1)
             {
                 _displayWindow.SetNextMatchText(0,
                     _currentPhase.NextMatchField1.GetTeam1Name(),
                     _currentPhase.NextMatchField1.GetTeam2Name(),
-                    "Arbitre");
+                    _currentPhase.NextMatchField1.RefereeTeam?.Name);
 
                 _displayWindow.SetNextMatchText(1,
                     _currentPhase.NextMatchField2.GetTeam1Name(),
                     _currentPhase.NextMatchField2.GetTeam2Name(),
-                    "Arbitre");
+                    _currentPhase.NextMatchField2.RefereeTeam?.Name);
 
                 _displayWindow.SetNextMatchText(2,
                     _currentPhase.NextMatchField3.GetTeam1Name(),
                     _currentPhase.NextMatchField3.GetTeam2Name(),
-                    "Arbitre");
+                    _currentPhase.NextMatchField3.RefereeTeam?.Name);
             }
             else
             {

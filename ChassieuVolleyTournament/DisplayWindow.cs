@@ -23,6 +23,7 @@ namespace ChassieuVolleyTournament
         private Panel[] matchPanels = new Panel[3];
         private Label[][] courtLabels = new Label[3][];
         private Panel[] rankingPanels = new Panel[4];
+        private Label[] refereeLabels = new Label[3];
 
         private Panel matchAreaPanel;
         private Panel rankingAreaPanel;
@@ -57,7 +58,7 @@ namespace ChassieuVolleyTournament
 
         #region ---- Methods ----
 
-            #region ---- Pool Layout ----
+        #region ---- Pool Layout ----
 
         /// --------------------------------------------------
         /// Creates the pool layout:
@@ -65,8 +66,10 @@ namespace ChassieuVolleyTournament
         /// - Timer and tournament logo
         /// - Ranking area with 4 ranking panels
         /// --------------------------------------------------
-        private void PoolLayout()
+        public void PoolLayout()
         {
+            Controls.Clear();
+
             matchAreaPanel = new Panel
             {
                 Location = new Point(0, 0),
@@ -88,6 +91,7 @@ namespace ChassieuVolleyTournament
             var df = new Font("Segoe UI", 14, FontStyle.Bold);
             var tf = new Font("Consolas", 42, FontStyle.Bold);
 
+            // ====== TIMER ======
             timerText = new Label
             {
                 Text = "TEMPS RESTANT :",
@@ -116,18 +120,58 @@ namespace ChassieuVolleyTournament
             };
             matchAreaPanel.Controls.Add(logo);
 
+            // ====== MATCH PANELS ET COURTS ======
             for (int i = 0; i < 3; i++)
             {
                 int x = 330 * (i + 1) + 200 * i;
+
+                // ===== PROCHAIN MATCH =====
                 var mp = CreateMatchPanel(x, 200);
                 matchPanels[i] = mp;
                 matchAreaPanel.Controls.Add(mp);
-                matchAreaPanel.Controls.Add(CreateCourtPanel(x, 320, i));
+
+                // ===== TITRE DU TERRAIN (centré au-dessus du panneau) =====
+                Label terrainTitle = new Label
+                {
+                    Text = $"TERRAIN {i + 1}",
+                    Font = new Font("Segoe UI", 24, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    AutoSize = true
+                };
+                matchAreaPanel.Controls.Add(terrainTitle);
+
+                // Centrage horizontal dynamique du titre au-dessus du panel
+                matchAreaPanel.Layout += (s, e) =>
+                {
+                    terrainTitle.Location = new Point(
+                        mp.Left + (mp.Width / 2) - (terrainTitle.Width / 2),
+                        mp.Top - 60
+                    );
+                };
+
+                // ===== TERRAIN (image) =====
+                var courtPanel = CreateCourtPanel(x, 320, i);
+                matchAreaPanel.Controls.Add(courtPanel);
+
+                Label refereeLabel = new Label
+                {
+                    Text = $"Arbitre : Équipe {i + 4}",
+                    Font = new Font("Segoe UI", 16, FontStyle.Italic),
+                    ForeColor = Color.White,
+                    AutoSize = true,
+                    Location = new Point(courtPanel.Right + 30, courtPanel.Top + (courtPanel.Height / 2) - 20)
+                };
+                matchAreaPanel.Controls.Add(refereeLabel);
+
+                refereeLabels[i] = refereeLabel;
+                matchAreaPanel.Controls.Add(refereeLabel);
             }
 
-            matchAreaPanel.Controls.Add(CreateStyledButton("MATCHS", 30, 300, Color.FromArgb(243, 167, 18)));
-            rankingAreaPanel.Controls.Add(CreateStyledButton("CLASSEMENT", 30, 70, Color.FromArgb(10, 43, 75)));
+            // ===== BOUTONS =====
+            matchAreaPanel.Controls.Add(CreateStyledButton("MATCHS", 50, 300, Color.FromArgb(243, 167, 18)));
+            rankingAreaPanel.Controls.Add(CreateStyledButton("CLASSEMENT", 50, 70, Color.FromArgb(10, 43, 75)));
 
+            // ===== CLASSEMENTS =====
             string[] titles = { "POULE 1", "POULE 2", "POULE 3", "POULE VOLANTE" };
             for (int i = 0; i < titles.Length; i++)
             {
@@ -136,16 +180,19 @@ namespace ChassieuVolleyTournament
                 rankingAreaPanel.Controls.Add(rp);
             }
 
+            // ===== PLACEMENT DYNAMIQUE =====
             matchAreaPanel.Layout += (s, e) =>
             {
                 timerText.Location = new Point((960 - timerText.Width / 2), 20);
                 timerValue.Location = new Point((960 - timerValue.Width / 2), 60);
-                logo.Location = new Point(1920 - logo.Width - 30, 20);
+                logo.Location = new Point(1920 - logo.Width - 50, 20);
             };
         }
+
+
         #endregion
 
-            #region ---- Final Layout ----
+        #region ---- Final Layout ----
 
         /// -------------------------------------------------------------
         /// Displays the final 8-team bracket layout, including main and 
@@ -216,10 +263,10 @@ namespace ChassieuVolleyTournament
             pauseLabel = new Label
             {
                 Text = "Pause midi - Reprise à 13h30",
-                Font = new Font("Segoe UI", 36, FontStyle.Bold),
+                Font = new Font("Segoe UI", 50, FontStyle.Bold),
                 ForeColor = Color.White,
                 AutoSize = true,
-                Location = new Point(ClientSize.Width / 2 - 350, ClientSize.Height / 2 - 200),
+                Location = new Point(ClientSize.Width / 2 - 500, ClientSize.Height / 2 - 200),
                 TextAlign = ContentAlignment.MiddleCenter
             };
             Controls.Add(pauseLabel);
@@ -240,7 +287,7 @@ namespace ChassieuVolleyTournament
                 Image = Image.FromFile("../../Images/ChassieuLogo.png"),
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Size = new Size(500, 500),
-                Location = new Point(ClientSize.Width / 2 - 250, 540)
+                Location = new Point(ClientSize.Width / 2 - 250, 475)
             };
             Controls.Add(logo);
         }
@@ -290,29 +337,43 @@ namespace ChassieuVolleyTournament
                 BorderStyle = BorderStyle.FixedSingle
             };
 
-            var top = CreateCourtLabel("ÉQUIPE 1", new Point(60, 10));
-            var bot = CreateCourtLabel("ÉQUIPE 2", new Point(60, 270));
-            var scT = CreateCourtLabel("0", new Point(80, 130));
-            var scB = CreateCourtLabel("0", new Point(80, 150));
+            // 🔹 Labels plus grands et mieux centrés
+            var top = CreateCourtLabel("ÉQUIPE 1", new Point(0, 30), new Size(hp.Width, 40), 14, ContentAlignment.TopCenter);
+            var bot = CreateCourtLabel("ÉQUIPE 2", new Point(0, hp.Height - 80), new Size(hp.Width, 40), 14, ContentAlignment.BottomCenter);
+
+            var scT = CreateCourtLabel("0", new Point(0, 100), new Size(hp.Width, 40), 26, ContentAlignment.MiddleCenter);
+            var scB = CreateCourtLabel("0", new Point(0, 140), new Size(hp.Width, 40), 26, ContentAlignment.MiddleCenter);
+
             hp.Controls.AddRange(new Control[] { top, bot, scT, scB });
             courtLabels[idx] = new[] { top, bot, scT, scB };
             return hp;
         }
 
         /// ------------------------------------------------------
-        /// Creates a label for a court panel at a given location
-        /// with default font and colors.
+        /// Creates a label for a court panel at a given location,
+        /// with default font and colors (extended parameters).
         /// ------------------------------------------------------
-        private Label CreateCourtLabel(string text, Point loc) =>
-            new Label
+        private Label CreateCourtLabel(string text, Point loc, Size? size = null, float fontSize = 10, ContentAlignment align = ContentAlignment.MiddleLeft)
+        {
+            var lbl = new Label
             {
                 Text = text,
                 Location = loc,
-                AutoSize = true,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                AutoSize = false,
+                Font = new Font("Segoe UI", fontSize, FontStyle.Bold),
                 ForeColor = Color.White,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                TextAlign = align
             };
+
+            if (size.HasValue)
+                lbl.Size = size.Value;
+            else
+                lbl.AutoSize = true;
+
+            return lbl;
+        }
+
 
         /// -------------------------------------------------
         /// Creates a vertical styled button with a specific
@@ -348,6 +409,7 @@ namespace ChassieuVolleyTournament
                 BorderStyle = BorderStyle.FixedSingle,
                 Padding = new Padding(5)
             };
+
             var lbl = new Label
             {
                 Text = title,
@@ -366,13 +428,25 @@ namespace ChassieuVolleyTournament
                 RowCount = 5,
                 CellBorderStyle = TableLayoutPanelCellBorderStyle.Single
             };
+
             t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
             t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
             t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
 
+            // ✅ Chaque ligne aura la même hauteur
+            for (int i = 0; i < t.RowCount; i++)
+            {
+                t.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 5f));
+            }
+
+            // En-têtes
             string[] hdr = { "RANG", "ÉQUIPE", "PTS", "DIFF" };
-            foreach (var h in hdr) t.Controls.Add(CreateRankingCell(h, true));
+            foreach (var h in hdr)
+                t.Controls.Add(CreateRankingCell(h, true));
+
+            // Lignes d'équipes
             string[] names = { "ÉQUIPE 1", "ÉQUIPE 2", "ÉQUIPE 3", "ÉQUIPE 4" };
             for (int i = 0; i < names.Length; i++)
             {
@@ -385,6 +459,7 @@ namespace ChassieuVolleyTournament
             p.Controls.Add(t);
             return p;
         }
+
 
         /// --------------------------------------------
         /// Creates a cell label for the ranking table.
@@ -732,6 +807,23 @@ namespace ChassieuVolleyTournament
         private Point GetPanelCenter(Panel panel)
         {
             return new Point(panel.Left + panel.Width / 2, panel.Top + panel.Height / 2);
+        }
+
+        /// -------------------------------------------------
+        /// Update the current referee name on corresponding
+        /// field.
+        /// -------------------------------------------------
+        public void UpdateReferee(int courtIndex, string refereeName)
+        {
+            // Sécurité : éviter les erreurs d'index
+            if (courtIndex < 0 || courtIndex >= refereeLabels.Length)
+                return;
+
+            // Si le label existe déjà, on met simplement à jour le texte
+            if (refereeLabels[courtIndex] != null)
+            {
+                refereeLabels[courtIndex].Text = $"Arbitre : {refereeName}";
+            }
         }
 
         #endregion

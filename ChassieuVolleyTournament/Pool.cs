@@ -46,12 +46,12 @@ namespace ChassieuVolleyTournament
         {
             List<Team> teams = Ranking.Values.ToList();
 
-            Matches.Add(new Match(teams[0], teams[1]));
-            Matches.Add(new Match(teams[2], teams[3]));
-            Matches.Add(new Match(teams[0], teams[2]));
-            Matches.Add(new Match(teams[1], teams[3]));
-            Matches.Add(new Match(teams[0], teams[3]));
-            Matches.Add(new Match(teams[1], teams[2]));
+            Matches.Add(new Match(teams[0], teams[1], teams[2]));
+            Matches.Add(new Match(teams[2], teams[3], teams[0]));
+            Matches.Add(new Match(teams[0], teams[2], teams[3]));
+            Matches.Add(new Match(teams[1], teams[3], teams[1]));
+            Matches.Add(new Match(teams[0], teams[3], teams[3]));
+            Matches.Add(new Match(teams[1], teams[2], teams[2]));
         }
 
         /// -----------------------------------------------------

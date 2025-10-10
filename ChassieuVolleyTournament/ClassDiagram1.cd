@@ -1,0 +1,142 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="ChassieuVolleyTournament.DisplayWindow" Collapsed="true">
+    <Position X="10.25" Y="0.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>EAYAQAgAwEEAgAAJACAAAAcQgEAAkAAEEGEAABABACA=</HashCode>
+      <FileName>DisplayWindow.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Form1" Collapsed="true">
+    <Position X="12" Y="0.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAACAAAAAAAACAAAACAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Form1.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Match" Collapsed="true">
+    <Position X="13.75" Y="0.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAEgAgAAUAAQAACABAAAEAgAAAgAAgAgBAAAAQAA=</HashCode>
+      <FileName>Match.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Phase" Collapsed="true">
+    <Position X="5" Y="0.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAARAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Phase.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Pool" Collapsed="true">
+    <Position X="8.5" Y="1.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ABAAAAAAAAAAAAAAAAAAEAAQAAAAAgAAAAAAARAAAAA=</HashCode>
+      <FileName>Pool.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.PoolPhase" Collapsed="true">
+    <Position X="3.75" Y="2" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAAAAEAAAAAACAAAACAAAAAAAAAEABAAQAAABIAAA=</HashCode>
+      <FileName>PoolPhase.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.PrivateKeyGenerator" Collapsed="true">
+    <Position X="10.25" Y="1.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAEAAAAAAAAAAAAAAAAAAAAAIAQAAAAQAAAQAAAAAE=</HashCode>
+      <FileName>PrivateKeyGenerator.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Program" Collapsed="true">
+    <Position X="12" Y="1.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>EAQAAABkAAAAAAAAAAACgAAAAAAAAgAEAAAEBAAIAAA=</HashCode>
+      <FileName>Program.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.RefereeWebServer" Collapsed="true">
+    <Position X="13.75" Y="1.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAEAAAAgKAQAABAwAAAAgCEAAAIAAgQAAAAABAAAAE=</HashCode>
+      <FileName>RefereeWebServer.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.StaffWindow" Collapsed="true">
+    <Position X="13.75" Y="2.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAIAAGAAAAAAAAIAAIAAAAAAIACAAAIAEAAggBGAA=</HashCode>
+      <FileName>StaffWindow.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.ArrayExtensions" Collapsed="true">
+    <Position X="8.5" Y="0.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>StaffWindow.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Team" Collapsed="true">
+    <Position X="8.5" Y="3.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAACAAA=</HashCode>
+      <FileName>Team.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Tournament" Collapsed="true">
+    <Position X="13.75" Y="3.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IJAEiCACAAAgAFAgAIkhAFCMAAAQAAAAQAmAAksAAAA=</HashCode>
+      <FileName>Tournament.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.TreePhase" Collapsed="true">
+    <Position X="6" Y="2" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAEAAAQAEAABAAAAEAQAAAAABAAAAACAQAAAAA=</HashCode>
+      <FileName>TreePhase.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.RoundedPanel" Collapsed="true">
+    <Position X="10.25" Y="2.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Utilitaries.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Timer" Collapsed="true">
+    <Position X="12" Y="3.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAEAIAAgAIgAAQAAKAAAAAAgACAAA=</HashCode>
+      <FileName>Utilitaries.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.TextInputDialog" Collapsed="true">
+    <Position X="10.25" Y="3.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAQAAACCAAAAAAAAAAAAEAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Utilitaries.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Properties.Resources" Collapsed="true">
+    <Position X="8.5" Y="2.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAABEAAAAQAAAAAAAAAAAAAAAIA=</HashCode>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="ChassieuVolleyTournament.Properties.Settings" Collapsed="true">
+    <Position X="12" Y="2.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAIAAAAAABAAAAAAAAAAAAAAA=</HashCode>
+    </TypeIdentifier>
+  </Class>
+  <Struct Name="ChassieuVolleyTournament.TeamStatistics" Collapsed="true">
+    <Position X="8.5" Y="5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IAAAAAAABAAAAAAAAAAAAAAAQAAAAAAAAAAAgAAAAAA=</HashCode>
+      <FileName>Utilitaries.cs</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>
