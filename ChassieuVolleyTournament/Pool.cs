@@ -1,9 +1,6 @@
-﻿#region ---- Includes ----
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
-#endregion
 
 namespace ChassieuVolleyTournament
 {
@@ -14,24 +11,17 @@ namespace ChassieuVolleyTournament
     internal class Pool
     {
         #region ---- Properties ----
-        public Dictionary<string, Team> Ranking { get; set; }
-        public List<Match> Matches { get; set; }
+        /// Teams ordered by current ranking (index 0 = first).
+        private List<Team> ranked;
+
+        public List<Match> Matches { get; private set; }
         #endregion
 
         #region ---- Constructor ---- 
-        /// ----------------------------------------------------------
-        /// Initializes a Pool with four teams, sets initial ranking,
-        /// and generates all pool matches between teams.
-        /// ----------------------------------------------------------
         public Pool(Team team1, Team team2, Team team3, Team team4)
         {
-            Ranking = new Dictionary<string, Team>();
+            ranked = new List<Team> { team1, team2, team3, team4 };
             Matches = new List<Match>();
-
-            Ranking.Add("1er", team1);
-            Ranking.Add("2ème", team2);
-            Ranking.Add("3ème", team3);
-            Ranking.Add("4ème", team4);
 
             GenerateMatches();
         }
@@ -40,47 +30,43 @@ namespace ChassieuVolleyTournament
 
         #region ---- Methods ----
         /// ----------------------------------------------------
-        /// Generates matches for all pairings within the pool.
+        /// Generates the 6 matches of the pool. The referee of a
+        /// match is always one of the two teams NOT playing it
+        /// (the old table had teams refereeing their own match).
+        /// Referee duties: 2-2-1-1 over the four teams.
         /// ----------------------------------------------------
         private void GenerateMatches()
         {
-            List<Team> teams = Ranking.Values.ToList();
+            List<Team> t = ranked.ToList();
 
-            Matches.Add(new Match(teams[0], teams[1], teams[2]));
-            Matches.Add(new Match(teams[2], teams[3], teams[0]));
-            Matches.Add(new Match(teams[0], teams[2], teams[3]));
-            Matches.Add(new Match(teams[1], teams[3], teams[1]));
-            Matches.Add(new Match(teams[0], teams[3], teams[3]));
-            Matches.Add(new Match(teams[1], teams[2], teams[2]));
+            Matches.Add(new Match(t[0], t[1], t[2]));
+            Matches.Add(new Match(t[2], t[3], t[0]));
+            Matches.Add(new Match(t[0], t[2], t[3]));
+            Matches.Add(new Match(t[1], t[3], t[2]));
+            Matches.Add(new Match(t[0], t[3], t[1]));
+            Matches.Add(new Match(t[1], t[2], t[0]));
         }
 
         /// -----------------------------------------------------
-        /// Updates the ranking dictionary by sorting teams
-        /// based on TournamentPoints and then point difference.
+        /// Sorts teams by tournament points, then point difference,
+        /// then scored points. Ties keep their previous order.
         /// -----------------------------------------------------
         public void UpdateRanking()
         {
-            List<Team> teams = GetTeams();
-
-            Ranking.Clear();
-
-            List<Team> orderedTeams = teams
+            ranked = ranked
                 .OrderByDescending(t => t.Statistics.TournamentPoints)
                 .ThenByDescending(t => t.Statistics.Difference)
+                .ThenByDescending(t => t.Statistics.ScoredPoints)
                 .ToList();
-
-            Ranking["1er"] = orderedTeams[0];
-            Ranking["2ème"] = orderedTeams[1];
-            Ranking["3ème"] = orderedTeams[2];
-            Ranking["4ème"] = orderedTeams[3];
         }
 
         #endregion
 
         #region ---- Getters & Setters ----
         public List<Match> GetMatches() => Matches;
-        public List<Team> GetTeams() => Ranking.Values.ToList();
 
+        /// Teams ordered by current ranking.
+        public List<Team> GetTeams() => ranked.ToList();
         #endregion
     }
 }

@@ -1,85 +1,80 @@
-﻿#region ---- Includes ---- 
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Text;
-
-#endregion
 
 namespace ChassieuVolleyTournament
 {
     /// --------------------------------------------------------
     /// Singleton class responsible for generating unique
-    /// 6-character alphanumeric private keys.
-    /// Ensures no duplicate keys are generated during runtime.
+    /// 6-character private keys (one per match).
+    /// Uses a cryptographic RNG (keys are exposed on the web) and
+    /// an alphabet without look-alike characters (no 0/O, 1/I).
     /// --------------------------------------------------------
     public class PrivateKeyGenerator
     {
         #region ---- Properties ----
 
-        /// -----------------------------------------------
-        /// Singleton instance of the PrivateKeyGenerator.
-        /// -----------------------------------------------
         private static readonly Lazy<PrivateKeyGenerator> _instance =
             new Lazy<PrivateKeyGenerator>(() => new PrivateKeyGenerator());
 
-        /// ---------------------------------------------------------------
-        /// Set containing all keys generated so far to ensure uniqueness.
-        /// ---------------------------------------------------------------
         private readonly HashSet<string> _generatedKeys = new HashSet<string>();
+        private readonly RNGCryptoServiceProvider _rng = new RNGCryptoServiceProvider();
+        private readonly object _lock = new object();
 
-        private readonly Random _random = new Random();
-
-        /// ----------------------------------------
-        /// Allowed characters in a key (A-Z, 0-9).
-        /// ----------------------------------------
-        private const string _chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ356789";
+        /// 32 characters -> a random byte masked with 31 is perfectly unbiased.
+        private const string _chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
         private const int _keyLength = 6;
 
         #endregion
 
-        #region ---- Constructor ----
-
-        /// -------------------------------------------
-        /// Private constructor for singleton pattern.
-        /// -------------------------------------------
         private PrivateKeyGenerator() { }
-
-        #endregion
 
         #region ---- Methods ----
 
-        /// --------------------------------------------------
-        /// Generates a unique 6-character alphanumeric key.
-        /// Ensures that the same key is not generated twice.
-        /// Returns the newly generated key as a string.
-        /// --------------------------------------------------
+        /// ---------------------------------------------------
+        /// Generates a unique key. Never returns the same key twice.
+        /// ---------------------------------------------------
         public string GenerateKey()
         {
-            string key;
-
-            do
+            lock (_lock)
             {
-                var builder = new StringBuilder(_keyLength);
-                for (int i = 0; i < _keyLength; i++)
-                {
-                    builder.Append(_chars[_random.Next(_chars.Length)]);
-                }
-                key = builder.ToString();
-            }
-            while (_generatedKeys.Contains(key));
+                string key;
+                byte[] bytes = new byte[_keyLength];
 
-            _generatedKeys.Add(key);
-            return key;
+                do
+                {
+                    _rng.GetBytes(bytes);
+                    var builder = new StringBuilder(_keyLength);
+                    for (int i = 0; i < _keyLength; i++)
+                        builder.Append(_chars[bytes[i] & 31]);
+                    key = builder.ToString();
+                }
+                while (!_generatedKeys.Add(key));
+
+                return key;
+            }
+        }
+
+        /// ---------------------------------------------------------------
+        /// Normalizes what a referee typed: phone keyboards add lowercase
+        /// letters, spaces or dashes. Match keys are always upper-case.
+        /// ---------------------------------------------------------------
+        public static string Normalize(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return string.Empty;
+
+            var builder = new StringBuilder(input.Length);
+            foreach (char c in input)
+            {
+                if (char.IsLetterOrDigit(c))
+                    builder.Append(char.ToUpperInvariant(c));
+            }
+            return builder.ToString();
         }
 
         #endregion
 
-        #region ---- Getters & Setters ----
-        /// --------------------------------------------------------
-        /// Gets the singleton instance of the PrivateKeyGenerator.
-        /// --------------------------------------------------------
         public static PrivateKeyGenerator Instance => _instance.Value;
-
-        #endregion
     }
 }

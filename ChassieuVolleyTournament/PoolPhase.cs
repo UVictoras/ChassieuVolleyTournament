@@ -1,16 +1,15 @@
-﻿#region ---- Includes ----
-using System;
+﻿using System;
 using System.Linq;
-using System.Windows.Forms;
-
-#endregion
 
 namespace ChassieuVolleyTournament
 {
     /// -------------------------------------------------------
     /// Represents the pool phase of the tournament,
-    /// managing multiple pools and cycling matches
-    /// across three fields. Updates team scores and rankings.
+    /// managing four pools and cycling matches across three
+    /// fields (8 rounds x 3 fields = 24 matches).
+    /// Standings are updated when a match is *committed*; committing
+    /// is idempotent, so a match is never counted twice and a late
+    /// score correction simply replaces the previous result.
     /// -------------------------------------------------------
     internal class PoolPhase : Phase
     {
@@ -26,17 +25,23 @@ namespace ChassieuVolleyTournament
         int[] field3MatchsIndexes;
         int[] field3PoolsIndexes;
 
-        int currentIndex;
+        int round;
+
+        public const int RoundCount = 8;
+
+        /// <summary>Zero-based index of the round currently played.</summary>
+        public int CurrentRound => round;
+
+        /// <summary>True once the last round has ended.</summary>
+        public bool IsFinished { get; private set; }
+
+        /// <summary>True if another round follows the current one.</summary>
+        public bool HasNextRound => round + 1 < RoundCount;
 
         #endregion
 
         #region ---- Constructor ----
 
-        /// -------------------------------------------------------
-        /// Initializes a new PoolPhase with the given four pools,
-        /// sets up match/pool indexing for each field, and
-        /// initializes the first set of matches.
-        /// -------------------------------------------------------
         public PoolPhase(Pool pool1, Pool pool2, Pool pool3, Pool pool4)
         {
             pools = new Pool[4];
@@ -55,169 +60,151 @@ namespace ChassieuVolleyTournament
             field3MatchsIndexes = new int[8] { 0, 1, 2, 2, 3, 4, 5, 5 };
             field3PoolsIndexes = new int[8] { 2, 2, 2, 3, 2, 2, 2, 3 };
 
-            currentIndex = 0;
-
-            CycleMatches(null, EventArgs.Empty);
+            round = 0;
+            AssignRound();
         }
 
         #endregion
 
         #region ---- Methods ----
-        /// ------------------------------------------------------------
-        /// Advances the current matches on each field to the next
-        /// scheduled match in the pools, and updates the next matches.
-        /// Handles UI thread invocation if necessary.
-        /// ------------------------------------------------------------
-        public void CycleMatches(object sender, EventArgs e)
+
+        private Match MatchAt(int[] poolIdx, int[] matchIdx, int r)
         {
-            if (Application.OpenForms.Count > 0)
-            {
-                var mainForm = Application.OpenForms[0];
-                if (mainForm.InvokeRequired)
-                {
-                    mainForm.BeginInvoke(new Action(() => CycleMatches(sender, e)));
-                    return;
-                }
-            }
-
-            if (currentIndex >= 8)
-                return;
-
-            CurrentMatchField1 = pools[field1PoolsIndexes[currentIndex]].GetMatches()[field1MatchsIndexes[currentIndex]];
-            CurrentMatchField2 = pools[field2PoolsIndexes[currentIndex]].GetMatches()[field2MatchsIndexes[currentIndex]];
-            CurrentMatchField3 = pools[field3PoolsIndexes[currentIndex]].GetMatches()[field3MatchsIndexes[currentIndex]];
-
-            currentIndex++;
-
-            if (currentIndex >= 8)
-                return;
-
-            NextMatchField1 = pools[field1PoolsIndexes[currentIndex]].GetMatches()[field1MatchsIndexes[currentIndex]];
-            NextMatchField2 = pools[field2PoolsIndexes[currentIndex]].GetMatches()[field2MatchsIndexes[currentIndex]];
-            NextMatchField3 = pools[field3PoolsIndexes[currentIndex]].GetMatches()[field3MatchsIndexes[currentIndex]];
+            return pools[poolIdx[r]].GetMatches()[matchIdx[r]];
         }
 
-        /// ------------------------------------------------------
-        /// Updates scores and statistics for the current matches
-        /// when the timer stops. Also refreshes rankings in the
-        /// display and staff windows.
-        /// ------------------------------------------------------
-        public void IncrementTeamsScores(object sender, EventArgs e)
+        /// ------------------------------------------------------------
+        /// Sets current matches to the current round, and next matches
+        /// to the following round (or to the current ones if none).
+        /// ------------------------------------------------------------
+        private void AssignRound()
         {
-            if (Application.OpenForms.Count > 0)
+            CurrentMatchField1 = MatchAt(field1PoolsIndexes, field1MatchsIndexes, round);
+            CurrentMatchField2 = MatchAt(field2PoolsIndexes, field2MatchsIndexes, round);
+            CurrentMatchField3 = MatchAt(field3PoolsIndexes, field3MatchsIndexes, round);
+
+            if (HasNextRound)
             {
-                var mainForm = Application.OpenForms[0];
-                if (mainForm.InvokeRequired)
-                {
-                    mainForm.BeginInvoke(new Action(() => IncrementTeamsScores(sender, e)));
-                    return;
-                }
-            }
-
-            var display = Tournament.Instance.GetDisplayWindow();
-            var staffWindow = Tournament.Instance.GetStaffWindow(); 
-
-            if (display != null && display.InvokeRequired)
-            {
-                display.Invoke((MethodInvoker)(() => IncrementTeamsScores(sender, e)));
-                return;
-            }
-
-            if (staffWindow != null && staffWindow.InvokeRequired)
-            {
-                staffWindow.Invoke((MethodInvoker)(() => IncrementTeamsScores(sender, e)));
-                return;
-            }
-
-            UpdateMatchPoints(CurrentMatchField1);
-            UpdateTeamStats(CurrentMatchField1);
-
-            UpdateMatchPoints(CurrentMatchField2);
-            UpdateTeamStats(CurrentMatchField2);
-
-            UpdateMatchPoints(CurrentMatchField3);
-            UpdateTeamStats(CurrentMatchField3);
-
-            if (display == null)
-                return;
-
-            for (int poolIndex = 0; poolIndex < pools.Length; poolIndex++)
-            {
-                var pool = pools[poolIndex];
-
-                pool.UpdateRanking();
-
-                string[] teamNames = new string[4];
-                string[] teamDiffs = new string[4];
-                string[] teamPoints = new string[4];
-                int[] teamScoredPoints = new int[4];
-                int[] teamTakenPoints = new int[4];
-
-                var orderedTeams = pool.Ranking.Values.ToList();
-
-                for (int i = 0; i < orderedTeams.Count; i++)
-                {
-                    var team = orderedTeams[i];
-                    teamNames[i] = team.Name;
-                    teamDiffs[i] = team.Statistics.Difference >= 0
-                        ? $"+{team.Statistics.Difference}"
-                        : team.Statistics.Difference.ToString();
-                    teamPoints[i] = team.Statistics.TournamentPoints.ToString();
-                    teamScoredPoints[i] = team.Statistics.ScoredPoints;
-                    teamTakenPoints[i] = team.Statistics.TakenPoints;
-                }
-
-                display.SetRankingText(poolIndex, teamNames, teamDiffs, teamPoints);
-   
-                if (staffWindow != null)
-                {
-                    staffWindow.SetRankingText(poolIndex, teamNames, teamDiffs, teamPoints, teamScoredPoints, teamTakenPoints);
-                }
-            }
-
-            display.Update();
-
-            if (staffWindow != null)
-            {
-                staffWindow.Update();
-            }
-        }
-
-        /// -----------------------------------------------------------
-        /// Updates tournament points for a match based on the scores.
-        /// -----------------------------------------------------------
-        private void UpdateMatchPoints(Match match)
-        {
-            if (match.Team1Score > match.Team2Score)
-            {
-                match.Team1.Statistics.TournamentPoints += 3;
-                match.Team2.Statistics.TournamentPoints += 1;
-            }
-            else if (match.Team1Score < match.Team2Score)
-            {
-                match.Team1.Statistics.TournamentPoints += 1;
-                match.Team2.Statistics.TournamentPoints += 3;
+                NextMatchField1 = MatchAt(field1PoolsIndexes, field1MatchsIndexes, round + 1);
+                NextMatchField2 = MatchAt(field2PoolsIndexes, field2MatchsIndexes, round + 1);
+                NextMatchField3 = MatchAt(field3PoolsIndexes, field3MatchsIndexes, round + 1);
             }
             else
             {
-                match.Team1.Statistics.TournamentPoints += 1;
-                match.Team2.Statistics.TournamentPoints += 1;
+                NextMatchField1 = CurrentMatchField1;
+                NextMatchField2 = CurrentMatchField2;
+                NextMatchField3 = CurrentMatchField3;
             }
         }
 
-        /// ----------------------------------------------------
-        /// Updates scored points, taken points, and difference
-        /// for both teams in a match.
-        /// ----------------------------------------------------
-        private void UpdateTeamStats(Match match)
+        /// ------------------------------------------------------------
+        /// Moves to the next round. After the last round, the phase is
+        /// marked as finished (current matches stay displayed).
+        /// ------------------------------------------------------------
+        public void AdvanceRound()
         {
-            match.Team1.Statistics.ScoredPoints += match.Team1Score;
-            match.Team1.Statistics.TakenPoints += match.Team2Score;
+            if (HasNextRound)
+            {
+                round++;
+                AssignRound();
+            }
+            else
+            {
+                IsFinished = true;
+            }
+        }
+
+        /// -----------------------------------------------
+        /// Adds the three current matches to the standings.
+        /// -----------------------------------------------
+        public void CommitCurrentMatches()
+        {
+            CommitMatch(CurrentMatchField1);
+            CommitMatch(CurrentMatchField2);
+            CommitMatch(CurrentMatchField3);
+        }
+
+        /// ---------------------------------------------------------------
+        /// Adds one match to the standings. If the match was already
+        /// committed, its previous result is removed first, so calling
+        /// this twice (or after a score correction) is always safe.
+        /// ---------------------------------------------------------------
+        public void CommitMatch(Match match)
+        {
+            if (match == null) return;
+
+            if (match.Committed)
+                ApplyResult(match, -1, match.CommittedScore1, match.CommittedScore2);
+
+            ApplyResult(match, +1, match.ScoreTeam1, match.ScoreTeam2);
+
+            // A finished match is locked for referees (first time only: a match the
+            // staff reopened for a correction stays open until the staff locks it again).
+            if (!match.Committed) match.Locked = true;
+
+            match.Committed = true;
+            match.CommittedScore1 = match.ScoreTeam1;
+            match.CommittedScore2 = match.ScoreTeam2;
+        }
+
+        /// -------------------------------------------------------------
+        /// Adds (sign = +1) or removes (sign = -1) a result: tournament
+        /// points (win 3 / loss 1 / draw 1 each), scored/taken points.
+        /// -------------------------------------------------------------
+        private static void ApplyResult(Match match, int sign, int score1, int score2)
+        {
+            int points1, points2;
+
+            if (score1 > score2) { points1 = 3; points2 = 1; }
+            else if (score1 < score2) { points1 = 1; points2 = 3; }
+            else { points1 = 1; points2 = 1; }
+
+            match.Team1.Statistics.TournamentPoints += sign * points1;
+            match.Team2.Statistics.TournamentPoints += sign * points2;
+
+            match.Team1.Statistics.ScoredPoints += sign * score1;
+            match.Team1.Statistics.TakenPoints += sign * score2;
             match.Team1.Statistics.Difference = match.Team1.Statistics.ScoredPoints - match.Team1.Statistics.TakenPoints;
 
-            match.Team2.Statistics.ScoredPoints += match.Team2Score;
-            match.Team2.Statistics.TakenPoints += match.Team1Score;
+            match.Team2.Statistics.ScoredPoints += sign * score2;
+            match.Team2.Statistics.TakenPoints += sign * score1;
             match.Team2.Statistics.Difference = match.Team2.Statistics.ScoredPoints - match.Team2.Statistics.TakenPoints;
+        }
+
+        /// -------------------------------------
+        /// Re-sorts every pool by current stats.
+        /// -------------------------------------
+        public void UpdateAllRankings()
+        {
+            foreach (Pool pool in pools)
+                pool.UpdateRanking();
+        }
+
+        /// ----------------------------------------------------------------
+        /// Referees may change the score of a match that is on a field.
+        /// Finished matches are locked (the staff can reopen them), and
+        /// matches of later rounds are not open yet.
+        /// ----------------------------------------------------------------
+        public override bool IsMatchActive(Match match)
+        {
+            if (match == null) return false;
+
+            if (match.Locked) return false;
+
+            return match.Committed
+                || match == CurrentMatchField1
+                || match == CurrentMatchField2
+                || match == CurrentMatchField3;
+        }
+
+        /// <summary>Field number (1-3) the match is currently played on, or 0.</summary>
+        public int GetFieldOf(Match match)
+        {
+            if (match == null) return 0;
+            if (match == CurrentMatchField1) return 1;
+            if (match == CurrentMatchField2) return 2;
+            if (match == CurrentMatchField3) return 3;
+            return 0;
         }
 
         #endregion

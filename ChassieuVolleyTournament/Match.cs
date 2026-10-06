@@ -13,24 +13,30 @@
         public Team RefereeTeam { get; set; }
         public int ScoreTeam1 { get; set; }
         public int ScoreTeam2 { get; set; }
+
+        /// <summary>True once this match has been added to the standings.</summary>
+        public bool Committed { get; internal set; }
+
+        /// <summary>
+        /// When true, referees (web page) can no longer change the score.
+        /// Set automatically when a pool match ends; the staff can reopen it.
+        /// </summary>
+        public bool Locked { get; set; }
+
+        /// <summary>Score that was added to the standings (to undo it if the score is corrected later).</summary>
+        internal int CommittedScore1 { get; set; }
+        internal int CommittedScore2 { get; set; }
         #endregion
 
         #region ---- Constructors ----
-        /// ------------------------------------------------------------
-        /// Initializes a match with two teams, generates a unique key,
-        /// and registers the key in the tournament.
-        /// ------------------------------------------------------------
-        public Match(Team team1, Team team2)
+        public Match(Team team1, Team team2) : this(team1, team2, null)
         {
-            Team1 = team1;
-            Team2 = team2;
-            ScoreTeam1 = 0;
-            ScoreTeam2 = 0;
-
-            Key = PrivateKeyGenerator.Instance.GenerateKey();
-            Tournament.Instance.AddValidKey(Key);
         }
 
+        /// ------------------------------------------------------------
+        /// Initializes a match with two teams and an optional referee,
+        /// generates a unique key and registers it in the tournament.
+        /// ------------------------------------------------------------
         public Match(Team team1, Team team2, Team refereeTeam)
         {
             Team1 = team1;
@@ -58,21 +64,14 @@
         public string[] GetTeamsNames() => new string[] { Team1.Name, Team2.Name };
 
         /// --------------------------------------------------
-        /// Sets the scores for both teams given their names.
-        /// Assigns scores correctly regardless of order.
+        /// Sets both scores by position (team 1 / team 2).
+        /// (The old version matched on team *names*, which broke
+        /// as soon as names differed or were edited.)
         /// --------------------------------------------------
-        public void SetScores(string team1Name, string team2Name, int score1, int score2)
+        public void SetScores(int score1, int score2)
         {
-            if (team1Name == Team1.Name)
-            {
-                ScoreTeam1 = score1;
-                ScoreTeam2 = score2;
-            }
-            else
-            {
-                ScoreTeam1 = score2;
-                ScoreTeam2 = score1;
-            }
+            ScoreTeam1 = score1;
+            ScoreTeam2 = score2;
         }
         #endregion
     }

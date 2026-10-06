@@ -47,7 +47,8 @@ namespace ChassieuVolleyTournament
             WindowState = FormWindowState.Maximized;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(0, 38, 84);
-            Icon = new Icon("../../Images/ChassieuLogo.ico");
+            Icon icon = AppPaths.AppIcon;
+            if (icon != null) Icon = icon;
 
             bracketBlocks = new Dictionary<string, Panel>();
 
@@ -114,7 +115,7 @@ namespace ChassieuVolleyTournament
 
             logo = new PictureBox
             {
-                Image = Image.FromFile("../../Images/ChassieuLogo.png"),
+                Image = AppPaths.Logo,
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Size = new Size(150, 150)
             };
@@ -183,9 +184,10 @@ namespace ChassieuVolleyTournament
             // ===== PLACEMENT DYNAMIQUE =====
             matchAreaPanel.Layout += (s, e) =>
             {
-                timerText.Location = new Point((960 - timerText.Width / 2), 20);
-                timerValue.Location = new Point((960 - timerValue.Width / 2), 60);
-                logo.Location = new Point(1920 - logo.Width - 50, 20);
+                int w = matchAreaPanel.ClientSize.Width;
+                timerText.Location = new Point((w / 2 - timerText.Width / 2), 20);
+                timerValue.Location = new Point((w / 2 - timerValue.Width / 2), 60);
+                logo.Location = new Point(w - logo.Width - 50, 20);
             };
         }
 
@@ -239,12 +241,24 @@ namespace ChassieuVolleyTournament
 
             logo = new PictureBox
             {
-                Image = Image.FromFile("../../Images/ChassieuLogo.png"),
+                Image = AppPaths.Logo,
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Size = new Size(150, 150),
                 Location = new Point(ClientSize.Width - 180, 20)
             };
             Controls.Add(logo);
+
+            timerValue = new Label
+            {
+                Text = "00:00",
+                Font = new Font("Consolas", 30, FontStyle.Bold),
+                ForeColor = Color.Red,
+                BackColor = Color.Black,
+                BorderStyle = BorderStyle.Fixed3D,
+                AutoSize = true,
+                Location = new Point(40, 20)
+            };
+            Controls.Add(timerValue);
         }
 
         #endregion
@@ -284,7 +298,7 @@ namespace ChassieuVolleyTournament
 
             logo = new PictureBox
             {
-                Image = Image.FromFile("../../Images/ChassieuLogo.png"),
+                Image = AppPaths.Logo,
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Size = new Size(500, 500),
                 Location = new Point(ClientSize.Width / 2 - 250, 475)
@@ -332,7 +346,7 @@ namespace ChassieuVolleyTournament
             {
                 Location = new Point(x, y),
                 Size = new Size(200, 300),
-                BackgroundImage = Image.FromFile("../../Images/VolleyballField.jpg"),
+                BackgroundImage = AppPaths.Field,
                 BackgroundImageLayout = ImageLayout.Stretch,
                 BorderStyle = BorderStyle.FixedSingle
             };
@@ -514,81 +528,7 @@ namespace ChassieuVolleyTournament
         /// -------------------------------------------
         public void UpdateTeamNameInMatches(string oldName, string newName)
         {
-            for (int i = 0; i < courtLabels.Length; i++)
-            {
-                var labels = courtLabels[i];
-                if (labels == null || labels.Length < 4)
-                    continue;
-
-                string t1 = labels[0].Text;
-                string t2 = labels[1].Text;
-                string s1 = labels[2].Text;
-                string s2 = labels[3].Text;
-
-                if (t1 == oldName) t1 = newName;
-                if (t2 == oldName) t2 = newName;
-
-                SetFieldText(i, t1, t2, s1, s2);
-            }
-
-            for (int i = 0; i < matchPanels.Length; i++)
-            {
-                var panel = matchPanels[i];
-                if (panel == null || panel.Controls.Count == 0)
-                    continue;
-
-                if (!(panel.Controls[0] is Label matchLabel))
-                    continue;
-
-                string text = matchLabel.Text;
-                var lines = text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                if (lines.Length < 3)
-                    continue;
-
-                string matchLine = lines[1];
-                string[] parts = matchLine.Split(new string[] { " VS " }, StringSplitOptions.None);
-                if (parts.Length != 2)
-                    continue;
-
-                string t1 = parts[0];
-                string t2 = parts[1];
-                string refName = "";
-
-                if (t1 == oldName) t1 = newName;
-                if (t2 == oldName) t2 = newName;
-
-                SetNextMatchText(i, t1, t2, refName);
-            }
-
-            for (int panelIndex = 0; panelIndex < rankingPanels.Length; panelIndex++)
-            {
-                int teamsPerPanel = 4;
-                int startTeamIndex = panelIndex * teamsPerPanel;
-
-                string[] teamNames = new string[teamsPerPanel];
-                string[] teamDiffs = new string[teamsPerPanel];
-                string[] teamPoints = new string[teamsPerPanel];
-
-                for (int j = 0; j < teamsPerPanel; j++)
-                {
-                    int teamIdx = startTeamIndex + j;
-                    if (teamIdx >= Tournament.Instance.Teams.Length)
-                    {
-                        teamNames[j] = "";
-                        teamDiffs[j] = "";
-                        teamPoints[j] = "";
-                        continue;
-                    }
-
-                    var team = Tournament.Instance.Teams[teamIdx];
-
-                    teamNames[j] = (team.Name == oldName) ? newName : team.Name;
-                    teamDiffs[j] = team.Statistics.Difference.ToString();
-                    teamPoints[j] = team.Statistics.TournamentPoints.ToString();
-                }
-
-                SetRankingText(panelIndex, teamNames, teamDiffs, teamPoints);
-            }
+            Tournament.Instance.RefreshAll();
         }
 
         /// ---------------------------------------------------------
@@ -822,7 +762,7 @@ namespace ChassieuVolleyTournament
             // Si le label existe déjà, on met simplement à jour le texte
             if (refereeLabels[courtIndex] != null)
             {
-                refereeLabels[courtIndex].Text = $"Arbitre : \r\n{refereeName}";
+                refereeLabels[courtIndex].Text = $"Arbitre : \r\n{refereeName ?? "-"}";
             }
         }
 
@@ -853,7 +793,7 @@ namespace ChassieuVolleyTournament
             if (idx < 0 || idx >= matchPanels.Length || matchPanels[idx] == null) return;
 
             ((Label)matchPanels[idx].Controls[0]).Text =
-                $"PROCHAIN MATCH\n{t1} VS {t2}\n📢 {refName}";
+                $"PROCHAIN MATCH\n{t1} VS {t2}\n📢 {refName ?? "-"}";
         }
 
         /// ------------------------------------------------------------

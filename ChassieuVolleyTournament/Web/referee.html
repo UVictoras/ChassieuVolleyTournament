@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0A2B4B">
+<title>Arbitre - Chassieu Volley</title>
+<style>
+  :root { --navy: #0A2B4B; --gold: #F3A712; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--navy); color: #fff;
+    overscroll-behavior: none; touch-action: manipulation;
+    -webkit-user-select: none; user-select: none;
+  }
+  [hidden] { display: none !important; }
+  button { font: inherit; }
+
+  /* ---------- Login ---------- */
+  #login {
+    min-height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; padding: 24px; text-align: center;
+  }
+  #login h1 { margin: 0; font-size: 1.6rem; }
+  #login p { margin: 0; opacity: .85; }
+  #key {
+    width: 100%; max-width: 320px; padding: 12px; border: 0; border-radius: 12px;
+    font-size: 2rem; letter-spacing: .25em; text-align: center; text-transform: uppercase;
+    color: #000; -webkit-user-select: text; user-select: text;
+  }
+  .btn {
+    padding: 14px 22px; border: 0; border-radius: 12px; cursor: pointer;
+    font-size: 1.1rem; font-weight: 700; background: var(--gold); color: #000;
+  }
+  .btn.secondary { background: rgba(255, 255, 255, .16); color: #fff; }
+  .btn:disabled { opacity: .35; }
+  #err { min-height: 1.4em; color: #ffb4b4; font-weight: 600; }
+
+  /* ---------- Scoreboard ---------- */
+  #board { height: 100%; display: flex; flex-direction: column; }
+  #top, #bottom {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px;
+  }
+  #top { padding-top: max(8px, env(safe-area-inset-top)); }
+  #bottom { padding-bottom: max(10px, env(safe-area-inset-bottom)); justify-content: center; }
+  #status { flex: 1; text-align: center; font-weight: 700; line-height: 1.2; }
+  #status small { display: block; font-weight: 400; opacity: .8; }
+  #sides { flex: 1; display: flex; min-height: 0; }
+  .side {
+    flex: 1; min-width: 0; border: 0; padding: 8px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  }
+  .side.left { background: #0d3a66; color: #fff; }
+  .side.right { background: var(--gold); color: #000; }
+  .side:active:not(:disabled) { filter: brightness(1.25); }
+  .side:disabled { cursor: default; opacity: .55; }
+  .name { font-size: clamp(1rem, 5vw, 2rem); font-weight: 700; text-align: center; line-height: 1.15; word-break: break-word; }
+  .score { font-size: clamp(4rem, 22vw, 9rem); font-weight: 800; line-height: 1; }
+
+  #banner {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 10; padding: 6px 10px;
+    text-align: center; font-weight: 700; background: #b00020; color: #fff;
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 10;
+    max-width: 90%; padding: 10px 16px; border-radius: 10px; background: #000; color: #fff;
+    text-align: center; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div id="banner" hidden>Connexion perdue... nouvelle tentative</div>
+
+<section id="login" hidden>
+  <h1>Chassieu Volley</h1>
+  <p>Entrez la clef du match</p>
+  <input id="key" type="text" maxlength="12" autocomplete="off" autocorrect="off"
+         autocapitalize="characters" spellcheck="false" placeholder="ABC123">
+  <button id="go" class="btn">Valider</button>
+  <div id="err"></div>
+</section>
+
+<section id="board" hidden>
+  <div id="top">
+    <button id="back" class="btn secondary" type="button">Clef</button>
+    <div id="status"></div>
+    <button id="swap" class="btn secondary" type="button">&#8644; Inverser</button>
+  </div>
+
+  <div id="sides">
+    <button id="sideL" class="side left" type="button">
+      <div id="nameL" class="name"></div>
+      <div id="scoreL" class="score">0</div>
+    </button>
+    <button id="sideR" class="side right" type="button">
+      <div id="nameR" class="name"></div>
+      <div id="scoreR" class="score">0</div>
+    </button>
+  </div>
+
+  <div id="bottom">
+    <button id="undo" class="btn" type="button" disabled>Annuler dernier point</button>
+  </div>
+</section>
+
+<div id="toast" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var KEY_STORE = 'cvt.key';
+  var SWAP_STORE = 'cvt.swap';
+  var POLL_MS = 2500;
+
+  var key = '';
+  var state = null;
+  var swapped = false;
+  var pending = 0;       // actions sent to the server and not answered yet
+  var seq = 0;           // lets us ignore answers that arrive out of order
+  var failures = 0;      // consecutive network failures
+  var wakeLock = null;
+  var toastTimer = null;
+
+  function el(id) { return document.getElementById(id); }
+  function normalize(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+  function save(name, value) {
+    try { if (value === null) localStorage.removeItem(name); else localStorage.setItem(name, value); } catch (e) { }
+  }
+  function load(name) {
+    try { return localStorage.getItem(name); } catch (e) { return null; }
+  }
+
+  function toast(text) {
+    var t = el('toast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 2500);
+  }
+
+  /* ---------- network ---------- */
+
+  function post(path, params) {
+    var body = Object.keys(params).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body,
+      cache: 'no-store'
+    }).then(function (r) { return r.json(); });
+  }
+
+  // Retries on network errors with the SAME request id: the server ignores
+  // a request id it has already applied, so a retry can never add a second point.
+  function send(path, params, attempts) {
+    return post(path, params).catch(function (err) {
+      if (attempts > 1) {
+        return new Promise(function (resolve) { setTimeout(resolve, 700); })
+          .then(function () { return send(path, params, attempts - 1); });
+      }
+      throw err;
+    });
+  }
+
+  function networkOk() {
+    failures = 0;
+    el('banner').hidden = true;
+  }
+
+  function networkFailed() {
+    failures++;
+    if (failures >= 2) el('banner').hidden = false;
+  }
+
+  /* ---------- screens ---------- */
+
+  function showLogin(message) {
+    state = null;
+    el('board').hidden = true;
+    el('login').hidden = false;
+    el('err').textContent = message || '';
+    releaseWakeLock();
+    setTimeout(function () { el('key').focus(); }, 50);
+  }
+
+  function showBoard() {
+    el('login').hidden = true;
+    el('board').hidden = false;
+    requestWakeLock();
+    render();
+  }
+
+  function render() {
+    if (!state) return;
+
+    var left = swapped ? 2 : 1;
+    var right = swapped ? 1 : 2;
+
+    el('nameL').textContent = state['team' + left];
+    el('scoreL').textContent = state['score' + left];
+    el('nameR').textContent = state['team' + right];
+    el('scoreR').textContent = state['score' + right];
+
+    var status = el('status');
+    status.textContent = state.status || '';
+    if (!state.active) {
+      var small = document.createElement('small');
+      small.textContent = state.locked
+        ? 'Match terminé et verrouillé : seul le staff peut le rouvrir'
+        : 'En attente : le match n\u2019est pas encore sur un terrain';
+      status.appendChild(small);
+    } else if (state.referee) {
+      var ref = document.createElement('small');
+      ref.textContent = 'Arbitre : ' + state.referee;
+      status.appendChild(ref);
+    }
+
+    el('sideL').disabled = !state.active;
+    el('sideR').disabled = !state.active;
+    el('undo').disabled = !state.active || !state.canUndo;
+  }
+
+  /* ---------- actions ---------- */
+
+  // Applies a server answer. Returns false if the key is no longer usable.
+  function apply(data) {
+    if (data && data.ok) {
+      state = data;
+      render();
+      return true;
+    }
+
+    if (data && (data.code === 'expired' || data.code === 'invalid_key')) {
+      save(KEY_STORE, null);
+      key = '';
+      showLogin(data.code === 'expired'
+        ? 'Ce match est terminé. Entrez la nouvelle clef.'
+        : 'Clef invalide.');
+      return false;
+    }
+
+    if (data && data.error) toast(data.error);
+    return true;
+  }
+
+  function login(value) {
+    var k = normalize(value);
+    if (!k) { el('err').textContent = 'Entrez une clef.'; return; }
+
+    el('err').textContent = '';
+    el('go').disabled = true;
+
+    post('/api/state', { key: k }).then(function (data) {
+      el('go').disabled = false;
+      networkOk();
+
+      if (!data.ok) {
+        el('err').textContent = data.error || 'Clef invalide';
+        return;
+      }
+
+      key = k;
+      save(KEY_STORE, k);
+      state = data;
+      showBoard();
+    }).catch(function () {
+      el('go').disabled = false;
+      el('err').textContent = 'Impossible de joindre le serveur. Vérifiez la connexion.';
+    });
+  }
+
+  function act(path, extra, optimistic) {
+    if (!state || !state.active) return;
+
+    if (optimistic) optimistic();
+    render();
+
+    var params = { key: key, rid: newId() };
+    for (var name in extra) { if (Object.prototype.hasOwnProperty.call(extra, name)) params[name] = extra[name]; }
+
+    var mine = ++seq;
+    pending++;
+
+    send(path, params, 3).then(function (data) {
+      networkOk();
+      if (mine === seq) apply(data);       // an older answer must not overwrite a newer tap
+      else if (data && !data.ok) apply(data);
+    }).catch(function () {
+      networkFailed();
+      toast('Point non confirmé - vérifiez le score');
+    }).then(function () {
+      pending--;
+    });
+  }
+
+  function tap(side) {
+    var team = (side === 'L') === !swapped ? 0 : 1;   // team index 0 or 1
+
+    act('/api/score', { team: team }, function () {
+      state['score' + (team + 1)]++;
+      state.canUndo = true;
+    });
+
+    try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) { }
+  }
+
+  function undo() {
+    act('/api/undo', {}, function () {
+      // Server decides which team loses the point; the answer will correct the display.
+      state.canUndo = false;
+    });
+  }
+
+  /* ---------- polling ---------- */
+
+  function poll() {
+    if (!key || document.hidden || pending > 0) return;
+
+    var mine = seq;
+    post('/api/state', { key: key }).then(function (data) {
+      networkOk();
+      if (mine === seq && pending === 0) apply(data);
+    }).catch(networkFailed);
+  }
+
+  /* ---------- screen wake lock (keeps the phone awake while refereeing) ---------- */
+
+  function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator && !wakeLock) {
+        navigator.wakeLock.request('screen').then(function (lock) {
+          wakeLock = lock;
+          lock.addEventListener('release', function () { wakeLock = null; });
+        }).catch(function () { });
+      }
+    } catch (e) { }
+  }
+
+  function releaseWakeLock() {
+    try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) { }
+  }
+
+  /* ---------- wiring ---------- */
+
+  el('go').addEventListener('click', function () { login(el('key').value); });
+  el('key').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(el('key').value); });
+  el('key').addEventListener('input', function () { el('key').value = normalize(el('key').value); });
+
+  el('sideL').addEventListener('click', function () { tap('L'); });
+  el('sideR').addEventListener('click', function () { tap('R'); });
+  el('undo').addEventListener('click', undo);
+
+  el('swap').addEventListener('click', function () {
+    swapped = !swapped;
+    save(SWAP_STORE, swapped ? '1' : '0');
+    render();
+  });
+
+  el('back').addEventListener('click', function () {
+    save(KEY_STORE, null);
+    key = '';
+    showLogin('');
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && key) { requestWakeLock(); poll(); }
+  });
+
+  setInterval(poll, POLL_MS);
+
+  // A key can be passed in the address (page#ABC123); otherwise reuse the last one.
+  swapped = load(SWAP_STORE) === '1';
+  var fromHash = normalize(location.hash);
+  var initial = fromHash || load(KEY_STORE) || '';
+
+  if (initial) {
+    key = initial;
+    post('/api/state', { key: initial }).then(function (data) {
+      networkOk();
+      if (data.ok) { state = data; showBoard(); }
+      else { save(KEY_STORE, null); key = ''; showLogin(data.error || ''); }
+    }).catch(function () { showLogin('Impossible de joindre le serveur.'); });
+  } else {
+    showLogin('');
+  }
+})();
+</script>
+</body>
+</html>

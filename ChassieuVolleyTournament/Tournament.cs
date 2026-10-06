@@ -1,11 +1,8 @@
-﻿#region ---- Includes ----
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
-using System.Windows.Forms;
-
-#endregion
 
 namespace ChassieuVolleyTournament
 {
@@ -13,23 +10,29 @@ namespace ChassieuVolleyTournament
     /// Singleton class representing the Volleyball Tournament.
     /// Manages all tournament phases, teams, matches, and timers.
     /// Responsible for updating the display and staff windows.
+    /// 
+    /// Threading: everything here runs on the UI thread (the timer
+    /// ticks on a WinForms timer, and the web server marshals its
+    /// calls with Invoke). Windows may be null (headless tests).
     /// -----------------------------------------------------------
     public class Tournament
     {
         #region ---- Properties ----
 
-        /// --------------------------------------------
-        /// Singleton instance of the Tournament class.
-        /// --------------------------------------------
         private static readonly Lazy<Tournament> _instance =
             new Lazy<Tournament>(() => new Tournament());
 
-        /// ------------------------------
-        /// Array of participating teams.
-        /// ------------------------------
+        /// <summary>
+        /// When true, statistics restart from zero for the "level" phase (second pool stage),
+        /// so the ranking inside a level pool only reflects the level matches.
+        /// Set to false to carry the morning points over.
+        /// </summary>
+        public static bool ResetStatsForLevelPhase = true;
+
+        /// <summary>Participating teams (16).</summary>
         public Team[] Teams;
 
-        private ChassieuVolleyTournament.Timer _timer;
+        private readonly ChassieuVolleyTournament.Timer _timer;
         private DisplayWindow _displayWindow;
         private StaffWindow _staffWindow;
 
@@ -39,592 +42,508 @@ namespace ChassieuVolleyTournament
 
         private Phase _currentPhase;
 
-        private HashSet<string> _validKeys;
+        private readonly HashSet<string> _validKeys = new HashSet<string>();
+        private readonly object _keysLock = new object();
 
-        private long _lastTimerTime;
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private long _lastTickMs;
 
-        /// ----------------------------------------------
-        /// Event triggered when a tournament phase ends.
-        /// ----------------------------------------------
-        public event EventHandler EndPhase;
+        private static readonly string[] DefaultTeamNames =
+        {
+            "Aliexpress", "Les 4 Fantasques", "Aymard", "Mojito",
+            "Bounniz", "Les fratés", "PanOx", "Les Vollaylles",
+            "Zimbra", "Éclatés au sol", "Les pipous", "Namasté",
+            "Fixouille", "Black Mamba", "Les Crazy Dinos", "Ti-Punch"
+        };
 
         #endregion
 
         #region ---- Constructor ----
 
-        /// -----------------------------------------------------
-        /// Private constructor for singleton pattern.
-        /// Initializes the tournament timer and valid keys set.
-        /// -----------------------------------------------------
         private Tournament()
         {
             _timer = new ChassieuVolleyTournament.Timer();
 
-            _validKeys = new HashSet<string>();
+            // Subscribed once, for the whole life of the app. Only a MATCH timer
+            // reaching zero ends a match; a warm-up ending does nothing here.
+            _timer.OnMatchEnd += HandleMatchEnd;
         }
 
         #endregion
 
-        #region ---- Methods ----
+        #region ---- Phases ----
 
         /// --------------------------------------------------------
-        /// Initializes the morning phase with 16 teams distributed
-        /// into 4 pools. Configures timer callbacks and updates
-        /// staff and display windows.
+        /// Creates the 16 teams, distributes them into 4 pools and
+        /// starts the morning pool phase.
         /// --------------------------------------------------------
         public void InitializeMorningPhase()
         {
+            string[] names = LoadTeamNames();
+
             Teams = new Team[16];
-            Team tempTeam;
+            for (int i = 0; i < Teams.Length; i++)
+                Teams[i] = new Team(names[i]);
 
             Pool[] tempPools = new Pool[4];
-            Pool tempPool;
-
-            string[] teamNames = { "Aliexpress", "Les 4 Fantasques", "Aymard", "Mojito", "Bounniz", "Les fratés", "PanOx", "Les Vollaylles", "Zimbra", "Éclatés au sol", "Les pipous", "Namasté", "Fixouille", "Black Mamba", "Les Crazy Dinos", "Ti-Punch"};
- 
-            for (int i = 0; i < Teams.Length; i++)
-            {
-                tempTeam = new Team(teamNames[i]);
-                Teams[i] = tempTeam;
-            }
-
             for (int j = 0; j < 4; j++)
-            {
-                tempPool = new Pool(Teams[j * 4], Teams[j * 4 + 1], Teams[j * 4 + 2], Teams[j * 4 + 3]);
-                tempPools[j] = tempPool;
-            }
+                tempPools[j] = new Pool(Teams[j * 4], Teams[j * 4 + 1], Teams[j * 4 + 2], Teams[j * 4 + 3]);
+
+            _levelPhase = null;
+            _finalBracket = null;
 
             _morningPhase = new PoolPhase(tempPools[0], tempPools[1], tempPools[2], tempPools[3]);
             _currentPhase = _morningPhase;
 
-            _timer.OnTimerStop -= _morningPhase.IncrementTeamsScores;
-            _timer.OnTimerStop += _morningPhase.IncrementTeamsScores;
-
-            _timer.OnTimerStop -= _morningPhase.CycleMatches;
-            _timer.OnTimerStop += _morningPhase.CycleMatches;
-
-            _timer.OnTimerStop -= UpdateWindowTexts;
-            _timer.OnTimerStop += UpdateWindowTexts;
-
-            _timer.OnTimerStop -= UpdateKeys;
-            _timer.OnTimerStop += UpdateKeys;
-
-            string[] TeamNames = new string[16];
-            for (int k = 0; k < 16; k++)
-            {
-                TeamNames[k] = Teams[k].Name;
-            }
-
-            for (int i = 0; i < 4; i++)
-            {
-                var pool = _morningPhase.GetPools()[i];
-                string[] names = pool.GetTeams().Select(t => t.Name).ToArray();
-                string[] diffs = pool.GetTeams().Select(t => t.Statistics.Difference.ToString()).ToArray();
-                string[] points = pool.GetTeams().Select(t => t.Statistics.TournamentPoints.ToString()).ToArray();
-
-                _displayWindow.SetRankingText(i, names, diffs, points);
-            }
-
-            _staffWindow.SetTeamNames(TeamNames);
-
-            _staffWindow.SetCurrentMatchKey(0, (_currentPhase as PoolPhase).CurrentMatchField1.Key);
-            _staffWindow.SetCurrentMatchKey(1, (_currentPhase as PoolPhase).CurrentMatchField2.Key);
-            _staffWindow.SetCurrentMatchKey(2, (_currentPhase as PoolPhase).CurrentMatchField3.Key);
-            _staffWindow.SetNextMatchKey(0, (_currentPhase as PoolPhase).NextMatchField1.Key);
-            _staffWindow.SetNextMatchKey(1, (_currentPhase as PoolPhase).NextMatchField2.Key);
-            _staffWindow.SetNextMatchKey(2, (_currentPhase as PoolPhase).NextMatchField3.Key);
-
-            UpdateLiveScores();
-            UpdateWindowTexts(null, EventArgs.Empty);
-
-            EndPhase -= InitializeLevelPhase;
-            EndPhase += InitializeLevelPhase;
+            RefreshAll();
         }
 
-        /// ------------------------------------------------------
-        /// Initializes the level phase (second pool stage) after
-        /// morning phase ends. Reorders teams into new pools,
-        /// updates timers, display, and staff windows.
-        /// ------------------------------------------------------
-        public void InitializeLevelPhase(object sender, EventArgs e)
+        /// ---------------------------------------------------------------
+        /// Team names: first 16 non-empty lines of teams.txt (next to the
+        /// executable or in the app data folder) if present, else defaults.
+        /// ---------------------------------------------------------------
+        private static string[] LoadTeamNames()
         {
-            if (Application.OpenForms.Count > 0)
+            try
             {
-                var mainForm = Application.OpenForms[0];
-                if (mainForm.InvokeRequired)
+                string[] candidates =
                 {
-                    mainForm.BeginInvoke(new Action(() => UpdateWindowTexts(sender, e)));
-                    return;
+                    Path.Combine(AppPaths.BaseDir, "teams.txt"),
+                    Path.Combine(AppPaths.DataDir, "teams.txt")
+                };
+
+                foreach (string path in candidates)
+                {
+                    if (!File.Exists(path)) continue;
+
+                    string[] lines = File.ReadAllLines(path)
+                        .Select(l => l.Trim())
+                        .Where(l => l.Length > 0)
+                        .ToArray();
+
+                    if (lines.Length >= 16)
+                        return lines.Take(16).ToArray();
+
+                    AppPaths.Log("teams.txt ignoré : " + lines.Length + " noms au lieu de 16 (" + path + ")");
                 }
             }
-
-            if (_displayWindow == null || _currentPhase == null)
-                return;
-
-            _displayWindow.PoolLayout();
-
-            EndPhase -= InitializeLevelPhase;
-
-            Team[] newPool1Teams = new Team[4];
-            Team[] newPool2Teams = new Team[4];
-            Team[] newPool3Teams = new Team[4];
-            Team[] newPool4Teams = new Team[4];
-
-            for (int i = 0; i < 4; i++)
+            catch (Exception ex)
             {
-                newPool1Teams[i] = _morningPhase.GetPools()[i].GetTeams()[0];
-                newPool2Teams[i] = _morningPhase.GetPools()[i].GetTeams()[1];
-                newPool3Teams[i] = _morningPhase.GetPools()[i].GetTeams()[2];
-                newPool4Teams[i] = _morningPhase.GetPools()[i].GetTeams()[3];
+                AppPaths.Log("Lecture teams.txt impossible : " + ex.Message);
             }
 
-            Pool tempPool1 = new Pool(newPool1Teams[0], newPool1Teams[1], newPool1Teams[2], newPool1Teams[3]);
-            Pool tempPool2 = new Pool(newPool2Teams[0], newPool2Teams[1], newPool2Teams[2], newPool2Teams[3]);
-            Pool tempPool3 = new Pool(newPool3Teams[0], newPool3Teams[1], newPool3Teams[2], newPool3Teams[3]);
-            Pool tempPool4 = new Pool(newPool4Teams[0], newPool4Teams[1], newPool4Teams[2], newPool4Teams[3]);
+            return (string[])DefaultTeamNames.Clone();
+        }
 
-            _levelPhase = new PoolPhase(tempPool1, tempPool2, tempPool3, tempPool4); 
-            _currentPhase = _levelPhase;
+        /// -------------------------------------------------------------
+        /// Returns why the next phase cannot start now, or null if it can.
+        /// -------------------------------------------------------------
+        public string GetNextPhaseProblem()
+        {
+            if (_currentPhase == null) return "Le tournoi n'est pas initialisé.";
+            if (_timer.GetTimerIsEnabled()) return "Un timer est en cours : terminez-le ou annulez-le d'abord.";
+            if (_currentPhase == _finalBracket) return "La phase finale est la dernière phase.";
+            return null;
+        }
 
-            _timer.OnTimerStop -= _morningPhase.IncrementTeamsScores;
-            _timer.OnTimerStop -= _levelPhase.IncrementTeamsScores;
-            _timer.OnTimerStop += _levelPhase.IncrementTeamsScores;
+        /// ------------------------------------------------------------
+        /// Moves morning -> level -> final. Returns false if not possible.
+        /// ------------------------------------------------------------
+        public bool GoToNextPhase()
+        {
+            if (GetNextPhaseProblem() != null) return false;
 
-            _timer.OnTimerStop -= _morningPhase.CycleMatches;
-            _timer.OnTimerStop -= _levelPhase.CycleMatches;
-            _timer.OnTimerStop += _levelPhase.CycleMatches;
-
-            _timer.OnTimerStop -= UpdateWindowTexts;
-            _timer.OnTimerStop += UpdateWindowTexts;
-
-            _timer.OnTimerStop -= UpdateKeys;
-            _timer.OnTimerStop += UpdateKeys;
-
-            string[] TeamNames = new string[16];
-            for (int k = 0; k < 16; k++)
+            if (_currentPhase == _morningPhase)
             {
-                TeamNames[k] = Teams[k].Name;
+                InitializeLevelPhase();
+                return true;
             }
 
-            _staffWindow.SetTeamNames(TeamNames);
-
-            _staffWindow.SetCurrentMatchKey(0, (_currentPhase as PoolPhase).CurrentMatchField1.Key);
-            _staffWindow.SetCurrentMatchKey(1, (_currentPhase as PoolPhase).CurrentMatchField2.Key);
-            _staffWindow.SetCurrentMatchKey(2, (_currentPhase as PoolPhase).CurrentMatchField3.Key);
-            _staffWindow.SetNextMatchKey(0, (_currentPhase as PoolPhase).NextMatchField1.Key);
-            _staffWindow.SetNextMatchKey(1, (_currentPhase as PoolPhase).NextMatchField2.Key);
-            _staffWindow.SetNextMatchKey(2, (_currentPhase as PoolPhase).NextMatchField3.Key);
-
-            for (int i = 0; i < 4; i++)
+            if (_currentPhase == _levelPhase)
             {
-                var pool = _levelPhase.GetPools()[i];
-                string[] names = pool.GetTeams().Select(t => t.Name).ToArray();
-                string[] diffs = pool.GetTeams().Select(t => t.Statistics.Difference.ToString()).ToArray();
-                string[] points = pool.GetTeams().Select(t => t.Statistics.TournamentPoints.ToString()).ToArray();
-
-                _displayWindow.SetRankingText(i, names, diffs, points);
+                InitializeFinalPhase();
+                return true;
             }
 
-            _displayWindow.SetFieldText(0,
-                _levelPhase.CurrentMatchField1.Team1.Name,
-                _levelPhase.CurrentMatchField1.Team2.Name,
-                _levelPhase.CurrentMatchField1.ScoreTeam1.ToString(),
-                _levelPhase.CurrentMatchField1.ScoreTeam2.ToString());
-
-            _displayWindow.SetFieldText(1,
-                _levelPhase.CurrentMatchField2.Team1.Name,
-                _levelPhase.CurrentMatchField2.Team2.Name,
-                _levelPhase.CurrentMatchField2.ScoreTeam1.ToString(),
-                _levelPhase.CurrentMatchField2.ScoreTeam2.ToString());
-
-            _displayWindow.SetFieldText(2,
-                _levelPhase.CurrentMatchField3.Team1.Name,
-                _levelPhase.CurrentMatchField3.Team2.Name,
-                _levelPhase.CurrentMatchField3.ScoreTeam1.ToString(),
-                _levelPhase.CurrentMatchField3.ScoreTeam2.ToString());
-
-
-            _displayWindow.SetNextMatchText(0,
-                _levelPhase.NextMatchField1.Team1.Name,
-                _levelPhase.NextMatchField1.Team2.Name,
-                _levelPhase.NextMatchField1.RefereeTeam.Name);
-
-            _displayWindow.SetNextMatchText(1,
-                _levelPhase.NextMatchField2.Team1.Name,
-                _levelPhase.NextMatchField2.Team2.Name,
-                _levelPhase.NextMatchField2.RefereeTeam.Name);
-
-            _displayWindow.SetNextMatchText(2,
-                _levelPhase.NextMatchField3.Team1.Name,
-                _levelPhase.NextMatchField3.Team2.Name,
-                _levelPhase.NextMatchField3.RefereeTeam.Name);
-
-
-            UpdateLiveScores();
-            UpdateWindowTexts(null, EventArgs.Empty);
-
-            EndPhase -= InitializeFinalPhase;
-            EndPhase += InitializeFinalPhase;
-
-            Program.SetKeysInfo();
-            Program.GiveWebServerKeysInfo();
-            Program.GiveWebServerKeys();
+            return false;
         }
 
         /// ------------------------------------------------------
-        /// Initializes the final knockout phase with the 8-team
-        /// bracket. Sets up display, staff windows, and disables
-        /// previous timer callbacks.
+        /// Level phase (second pool stage): pool N contains the
+        /// teams ranked N-th in each morning pool.
         /// ------------------------------------------------------
-        public void InitializeFinalPhase(object sender, EventArgs e)
+        private void InitializeLevelPhase()
         {
-            _displayWindow.FinalLayout();
+            _morningPhase.UpdateAllRankings();
+            Pool[] morningPools = _morningPhase.GetPools();
+
+            Pool[] levelPools = new Pool[4];
+            for (int rank = 0; rank < 4; rank++)
+            {
+                levelPools[rank] = new Pool(
+                    morningPools[0].GetTeams()[rank],
+                    morningPools[1].GetTeams()[rank],
+                    morningPools[2].GetTeams()[rank],
+                    morningPools[3].GetTeams()[rank]);
+            }
+
+            if (ResetStatsForLevelPhase)
+            {
+                foreach (Team team in Teams)
+                    team.Statistics = new TeamStatistics();
+            }
+
+            _levelPhase = new PoolPhase(levelPools[0], levelPools[1], levelPools[2], levelPools[3]);
+            _currentPhase = _levelPhase;
+
+            _displayWindow?.PoolLayout();
+            RefreshAll();
+        }
+
+        /// ------------------------------------------------------
+        /// Final knockout phase with the 8+8 team brackets.
+        /// ------------------------------------------------------
+        private void InitializeFinalPhase()
+        {
+            _levelPhase.UpdateAllRankings();
+            Pool[] pools = _levelPhase.GetPools();
+
+            _displayWindow?.FinalLayout();
 
             _finalBracket = new TreePhase();
-            _finalBracket.GenerateMatches(_levelPhase.GetPools()[0], _levelPhase.GetPools()[1], _levelPhase.GetPools()[2], _levelPhase.GetPools()[3]);
-
-            _timer.OnTimerStop -= _levelPhase.IncrementTeamsScores;
-            _timer.OnTimerStop -= _levelPhase.CycleMatches;
-            _timer.OnTimerStop -= UpdateWindowTexts;
-            _timer.OnTimerStop -= UpdateKeys;
+            _finalBracket.GenerateMatches(pools[0], pools[1], pools[2], pools[3]);
 
             _currentPhase = _finalBracket;
 
-            _displayWindow.Update();
-
-            EndPhase -= InitializeFinalPhase;
-
-            Program.TriggerResetWebServer();
-
-            Program.SetKeysInfo();
-            Program.GiveWebServerKeysInfo();
-            Program.GiveWebServerKeys();
-
-            _staffWindow.RebuildForTreePhase();
+            _staffWindow?.RebuildForTreePhase();
+            RefreshAll();
         }
 
-        /// --------------------------------------------------
-        /// Updates the display window with current match and
-        /// next match information for all fields.
-        /// --------------------------------------------------
-        private void UpdateWindowTexts(object sender, EventArgs e)
+        /// -------------------------------------------------------------
+        /// Puts the normal display back (after the pause screen was shown).
+        /// -------------------------------------------------------------
+        public void RestoreDisplay()
         {
-            if (Application.OpenForms.Count > 0)
+            if (_displayWindow == null) return;
+
+            if (_currentPhase is PoolPhase)
             {
-                var mainForm = Application.OpenForms[0];
-                if (mainForm.InvokeRequired)
-                {
-                    mainForm.BeginInvoke(new Action(() => UpdateWindowTexts(sender, e)));
-                    return;
-                }
+                _displayWindow.PoolLayout();
+                RefreshAll();
             }
-
-            if (_displayWindow == null || _currentPhase == null)
-                return;
-
-            _displayWindow.SetFieldText(0,
-                _currentPhase.CurrentMatchField1.GetTeam1Name(),
-                _currentPhase.CurrentMatchField1.GetTeam2Name(),
-                _currentPhase.CurrentMatchField1.GetScoreTeamOne(),
-                _currentPhase.CurrentMatchField1.GetScoreTeamTwo());
-
-            _displayWindow.UpdateReferee(0, _currentPhase.CurrentMatchField1.RefereeTeam?.Name);
-
-            _displayWindow.SetFieldText(1,
-                _currentPhase.CurrentMatchField2.GetTeam1Name(),
-                _currentPhase.CurrentMatchField2.GetTeam2Name(),
-                _currentPhase.CurrentMatchField2.GetScoreTeamOne(),
-                _currentPhase.CurrentMatchField2.GetScoreTeamTwo());
-
-            _displayWindow.UpdateReferee(1, _currentPhase.CurrentMatchField2.RefereeTeam?.Name);
-
-            _displayWindow.SetFieldText(2,
-                _currentPhase.CurrentMatchField3.GetTeam1Name(),
-                _currentPhase.CurrentMatchField3.GetTeam2Name(),
-                _currentPhase.CurrentMatchField3.GetScoreTeamOne(),
-                _currentPhase.CurrentMatchField3.GetScoreTeamTwo());
-
-            _displayWindow.UpdateReferee(2, _currentPhase.CurrentMatchField3.RefereeTeam?.Name);
-
-            if (_currentPhase.CurrentMatchField1 != _currentPhase.NextMatchField1)
+            else if (_currentPhase is TreePhase)
             {
-                _displayWindow.SetNextMatchText(0,
-                    _currentPhase.NextMatchField1.GetTeam1Name(),
-                    _currentPhase.NextMatchField1.GetTeam2Name(),
-                    _currentPhase.NextMatchField1.RefereeTeam?.Name);
-
-                _displayWindow.SetNextMatchText(1,
-                    _currentPhase.NextMatchField2.GetTeam1Name(),
-                    _currentPhase.NextMatchField2.GetTeam2Name(),
-                    _currentPhase.NextMatchField2.RefereeTeam?.Name);
-
-                _displayWindow.SetNextMatchText(2,
-                    _currentPhase.NextMatchField3.GetTeam1Name(),
-                    _currentPhase.NextMatchField3.GetTeam2Name(),
-                    _currentPhase.NextMatchField3.RefereeTeam?.Name);
-            }
-            else
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    _displayWindow.SetNextMatchText(i, "---", "---", "Arbitre");
-                }
+                _displayWindow.FinalLayout();
+                _finalBracket.DisplayMatchesOnWindow();
             }
         }
 
-        /// ----------------------------------------------
-        /// Updates live scores on the display window for
-        /// current matches in pool or tree phases.
-        /// ----------------------------------------------
-        public void UpdateLiveScores()
+        #endregion
+
+        #region ---- Timer ----
+
+        /// -------------------------------------------------------------
+        /// A match timer just reached zero (or was ended by the staff):
+        /// add the three matches to the standings and move to the next
+        /// round. Committing is idempotent, so this can never count a
+        /// match twice.
+        /// -------------------------------------------------------------
+        private void HandleMatchEnd(object sender, EventArgs e)
         {
-            if (_displayWindow == null || _currentPhase == null)
-                return;
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
 
-            if (_currentPhase is PoolPhase poolPhase)
+            if (poolPhase != null && !poolPhase.IsFinished)
             {
-                Match[] currentMatches = new Match[]
-                {
-                    poolPhase.CurrentMatchField1,
-                    poolPhase.CurrentMatchField2,
-                    poolPhase.CurrentMatchField3
-                };
-
-                for (int i = 0; i < currentMatches.Length; i++)
-                {
-                    Match match = currentMatches[i];
-                    if (match == null)
-                        continue;
-
-                    var labels = _displayWindow.CourtLabels.Length > i ? _displayWindow.CourtLabels[i] : null;
-                    if (labels == null || labels.Length < 4)
-                        continue;
-
-                    labels[0].Text = match.GetTeam1Name();
-                    labels[1].Text = match.GetTeam2Name();
-                    labels[3].Text = match.GetScoreTeamOne().ToString();
-                    labels[2].Text = match.GetScoreTeamTwo().ToString();
-                }
-            }
-            else if (_currentPhase is TreePhase treePhase)
-            {
-                var allMatches = treePhase.GetMatches();
-
-                foreach (var match in allMatches)
-                {
-                    string[] keys = new string[]
-                    {
-                        "P_QF1", "P_QF2", "P_QF3", "P_QF4",
-                        "C_QF1", "C_QF2", "C_QF3", "C_QF4",
-                        "P_SF1", "P_SF2",
-                        "C_SF1", "C_SF2",
-                        "P_FINAL", "C_FINAL",
-                        "P_3RD", "C_3RD"
-                    };
-
-                    foreach (var key in keys)
-                    {
-                        Match m = treePhase.GetMatchByKey(key);
-                        if (m == null) continue;
-
-                        _displayWindow.UpdateBracketBlock(key, m.Team1.Name, m.ScoreTeam1, m.ScoreTeam2, m.Team2.Name);
-                    }
-                }
-            }
-        }
-
-        /// ---------------------------------------------------
-        /// Updates the staff window with the current and next
-        /// match keys for all fields.
-        /// ---------------------------------------------------
-        private void UpdateKeys(object sender, EventArgs e)
-        {
-            if (Application.OpenForms.Count > 0)
-            {
-                var staffForm = Application.OpenForms[1];
-                if (staffForm.InvokeRequired)
-                {
-                    staffForm.BeginInvoke(new Action(() => UpdateKeys(sender, e)));
-                    return;
-                }
+                poolPhase.CommitCurrentMatches();
+                poolPhase.UpdateAllRankings();
+                poolPhase.AdvanceRound();
             }
 
-            string[] currentKeys = new string[3] { _currentPhase.CurrentMatchField1.GetMatchKey(), _currentPhase.CurrentMatchField2.GetMatchKey(), _currentPhase.CurrentMatchField3.GetMatchKey() };
-            string[] nextKeys = new string[3] {_currentPhase.NextMatchField1.GetMatchKey(), _currentPhase.NextMatchField2.GetMatchKey(), _currentPhase.NextMatchField3.GetMatchKey()};
-            _staffWindow.UpdateKeysLabels(currentKeys, nextKeys);
+            _displayWindow?.SetTimerText(0);
+            RefreshAll();
         }
 
-        /// --------------------------------------------------
-        /// Refreshes the ranking tables for all pools in the
-        /// current phase.
-        /// --------------------------------------------------
-        public void RefreshAllPoolsRanking()
+        /// ---------------------------------------------------------
+        /// Returns why a timer cannot start now, or null if it can.
+        /// ---------------------------------------------------------
+        public string GetStartTimerProblem(bool isMatch)
         {
-            if (_currentPhase is PoolPhase poolPhase)
-            {
-                var display = GetDisplayWindow();
-                var pools = poolPhase.GetPools();
+            if (_currentPhase == null) return "Le tournoi n'est pas initialisé.";
 
-                for (int poolIndex = 0; poolIndex < pools.Length; poolIndex++)
-                {
-                    var pool = pools[poolIndex];
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (isMatch && poolPhase != null && poolPhase.IsFinished)
+                return "Tous les matchs de cette phase sont terminés.\nPassez à la phase suivante.";
 
-                    pool.UpdateRanking();
-
-                    string[] teamNames = new string[pool.GetTeams().Count];
-                    string[] teamDiffs = new string[pool.GetTeams().Count];
-                    string[] teamPoints = new string[pool.GetTeams().Count];
-
-                    var orderedTeams = pool.Ranking.Values.ToList();
-
-                    for (int i = 0; i < orderedTeams.Count; i++)
-                    {
-                        var team = orderedTeams[i];
-                        teamNames[i] = team.Name;
-                        teamDiffs[i] = team.Statistics.Difference >= 0
-                            ? $"+{team.Statistics.Difference}"
-                            : team.Statistics.Difference.ToString();
-                        teamPoints[i] = team.Statistics.TournamentPoints.ToString();
-                    }
-
-                    display?.SetRankingText(poolIndex, teamNames, teamDiffs, teamPoints);
-                }
-
-                display?.Update();
-            }
+            return null;
         }
 
-        /// --------------------------------------------------
-        /// Updates a team name in all matches of the current
-        /// pool phase.
-        /// --------------------------------------------------
-        public void UpdateTeamNameInAllMatches(string oldName, string newName)
+        public void StartTimer(bool isMatch = true)
         {
-            foreach(var pool in (_currentPhase as PoolPhase).GetPools())
-            {
-                foreach (var match in pool.GetMatches())
-                {
-                    var teams = match.GetTeams();
+            if (GetStartTimerProblem(isMatch) != null) return;
 
-                    if (teams[0].Name == oldName)
-                    {
-                        teams[0].Name = newName;
-                    }
-                    if (teams[1].Name == oldName)
-                    {
-                        teams[1].Name = newName;
-                    }
-                }
-            }
-
+            _lastTickMs = _clock.ElapsedMilliseconds;
+            _timer.StartTimer(isMatch);
+            _displayWindow?.SetTimerText(_timer.GetCurrentTime());
+            RefreshStatus();
         }
 
-        /// ------------------------------------------------
-        /// Adds a valid key to the set of recognized keys.
-        /// ------------------------------------------------
-        public void AddValidKey(string key)
+        /// <summary>Ends the running match now (counts the matches and moves on).</summary>
+        public void EndMatchNow()
         {
-            _validKeys.Add(key);
+            if (_timer.IsMatchTimerRunning)
+                _timer.StopTimer();
         }
 
-        /// ----------------------------------------------------
-        /// Checks if a key is valid in the tournament context.
-        /// ----------------------------------------------------
-        public bool IsValidKey(string key)
+        /// <summary>Stops the running timer without any effect on the standings.</summary>
+        public void CancelTimer()
         {
-            return _validKeys.Contains(key);
+            _timer.CancelTimer();
+            _displayWindow?.SetTimerText(0);
+            RefreshStatus();
         }
 
-        /// ---------------------------
-        /// Raises the EndPhase event.
-        /// ---------------------------
-        public void RaiseEndPhase()
-        {
-            EndPhase?.Invoke(this, EventArgs.Empty);
-        }
+        public bool IsTimerRunning => _timer.GetTimerIsEnabled();
+        public bool IsMatchTimerRunning => _timer.IsMatchTimerRunning;
 
-        /// ----------------------------------------------------
-        /// Updates the timer by the elapsed time and refreshes
-        /// the display window's timer text.
-        /// ----------------------------------------------------
-        public void CycleTimer(Stopwatch Stopwatch)
-        {
-            long currentTime = Stopwatch.ElapsedMilliseconds;
-            if (_lastTimerTime == 0)
-            {
-                _lastTimerTime = currentTime;
-                return;
-            }
+        public void StopTimer() => _timer.StopTimer();
 
-            float deltaTime = (currentTime - _lastTimerTime) / 1000f;
-            _lastTimerTime = currentTime;
+        /// -------------------------------------------------------------
+        /// Called regularly by the UI timer: decrements the countdown by
+        /// the real elapsed time and refreshes the timer display.
+        /// -------------------------------------------------------------
+        public void CycleTimer()
+        {
+            long now = _clock.ElapsedMilliseconds;
+            float deltaTime = (now - _lastTickMs) / 1000f;
+            _lastTickMs = now;
 
             if (!_timer.GetTimerIsEnabled())
                 return;
 
             _timer.DecrementTimer(deltaTime);
 
-            if (GetDisplayWindow() != null)
-            {
-                GetDisplayWindow().Invoke((MethodInvoker)delegate
-                {
-                    GetDisplayWindow().SetTimerText(_timer.GetCurrentTime());
-                });
-            }
+            _displayWindow?.SetTimerText(_timer.GetCurrentTime());
+            RefreshStatus();
         }
 
         #endregion
 
-        #region ---- Getters & Setters ----
+        #region ---- Display refresh ----
 
-        /// -----------------------------------------------
-        /// Gets the singleton instance of the tournament.
-        /// -----------------------------------------------
-        public static Tournament Instance => _instance.Value;
-
-        /// ----------------------------------------------------------
-        /// Assigns the display and staff windows for the tournament.
-        /// ----------------------------------------------------------
-        public void SetWindows(DisplayWindow display, StaffWindow staff)
+        /// <summary>Pushes the whole current state to both windows.</summary>
+        public void RefreshAll()
         {
-            _displayWindow = display;
-            _staffWindow = staff;
+            RefreshRankings();
+            RefreshFields();
+            RefreshKeys();
+            RefreshBracket();
+            RefreshStatus();
         }
 
-        /// -------------------------------------------------------
-        /// Sets the current phase and updates the display window.
-        /// -------------------------------------------------------
-        public void SetCurrentPhase(Phase phase)
+        /// <summary>Re-sorts the pools after a manual edit of the statistics, then refreshes.</summary>
+        public void RefreshAllPoolsRanking()
         {
-            _currentPhase = phase;
-            UpdateWindowTexts(null, EventArgs.Empty);
+            (_currentPhase as PoolPhase)?.UpdateAllRankings();
+            RefreshAll();
         }
 
-        /// ------------------------------------------------
-        /// Gets a match by its unique key. Returns null if
-        /// the key is invalid or match not found.
-        /// ------------------------------------------------
+        /// <summary>Alias kept for team renames (Team objects are shared, only the labels need a refresh).</summary>
+        public void RefreshNames() => RefreshAll();
+
+        private static string FormatDiff(int diff) => diff >= 0 ? "+" + diff : diff.ToString();
+
+        /// -------------------------------------------------------------
+        /// Ranking tables of all pools, in display and staff windows.
+        /// -------------------------------------------------------------
+        public void RefreshRankings()
+        {
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (poolPhase == null) return;
+
+            Pool[] pools = poolPhase.GetPools();
+
+            for (int i = 0; i < pools.Length; i++)
+            {
+                List<Team> ordered = pools[i].GetTeams();
+
+                string[] names = ordered.Select(t => t.Name).ToArray();
+                string[] diffs = ordered.Select(t => FormatDiff(t.Statistics.Difference)).ToArray();
+                string[] points = ordered.Select(t => t.Statistics.TournamentPoints.ToString()).ToArray();
+
+                _displayWindow?.SetRankingText(i, names, diffs, points);
+                _staffWindow?.SetRankingText(i, ordered);
+            }
+        }
+
+        /// -------------------------------------------------------------
+        /// Court panels (teams, score, referee) and "next match" panels.
+        /// -------------------------------------------------------------
+        public void RefreshFields()
+        {
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (_displayWindow == null || poolPhase == null) return;
+
+            Match[] current = { poolPhase.CurrentMatchField1, poolPhase.CurrentMatchField2, poolPhase.CurrentMatchField3 };
+            Match[] next = { poolPhase.NextMatchField1, poolPhase.NextMatchField2, poolPhase.NextMatchField3 };
+
+            for (int i = 0; i < 3; i++)
+            {
+                _displayWindow.SetFieldText(i,
+                    current[i].GetTeam1Name(),
+                    current[i].GetTeam2Name(),
+                    current[i].GetScoreTeamOne(),
+                    current[i].GetScoreTeamTwo());
+
+                _displayWindow.UpdateReferee(i, current[i].RefereeTeam?.Name);
+
+                if (poolPhase.HasNextRound)
+                {
+                    _displayWindow.SetNextMatchText(i,
+                        next[i].GetTeam1Name(),
+                        next[i].GetTeam2Name(),
+                        next[i].RefereeTeam?.Name);
+                }
+                else
+                {
+                    _displayWindow.SetNextMatchText(i, "---", "---", "Arbitre");
+                }
+            }
+        }
+
+        /// -----------------------------------------------------
+        /// Current/next match keys shown in the staff window.
+        /// -----------------------------------------------------
+        public void RefreshKeys()
+        {
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (_staffWindow == null || poolPhase == null) return;
+
+            Match[] current = { poolPhase.CurrentMatchField1, poolPhase.CurrentMatchField2, poolPhase.CurrentMatchField3 };
+            Match[] next = { poolPhase.NextMatchField1, poolPhase.NextMatchField2, poolPhase.NextMatchField3 };
+
+            for (int i = 0; i < 3; i++)
+            {
+                _staffWindow.SetCurrentMatchKey(i, current[i].GetMatchKey());
+                _staffWindow.SetNextMatchKey(i, poolPhase.HasNextRound ? next[i].GetMatchKey() : "-");
+            }
+        }
+
+        /// <summary>Bracket blocks of the final phase.</summary>
+        public void RefreshBracket()
+        {
+            TreePhase treePhase = _currentPhase as TreePhase;
+            if (_displayWindow == null || treePhase == null) return;
+
+            foreach (string slot in TreePhase.Slots)
+            {
+                Match m = treePhase.GetMatchBySlot(slot);
+                if (m == null) continue;
+
+                _displayWindow.UpdateBracketBlock(slot, m.Team1.Name, m.ScoreTeam1, m.ScoreTeam2, m.Team2.Name);
+            }
+        }
+
+        /// <summary>Phase / round / timer line of the staff window.</summary>
+        public void RefreshStatus()
+        {
+            _staffWindow?.SetStatus(GetStatusText());
+        }
+
+        public string GetStatusText()
+        {
+            string text;
+
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (poolPhase != null)
+            {
+                string phaseName = poolPhase == _morningPhase ? "Poules du matin" : "Poules de niveau";
+                text = poolPhase.IsFinished
+                    ? phaseName + " : tous les matchs sont terminés"
+                    : phaseName + " : tour " + (poolPhase.CurrentRound + 1) + "/" + PoolPhase.RoundCount;
+            }
+            else if (_currentPhase is TreePhase)
+            {
+                text = "Phase finale";
+            }
+            else
+            {
+                text = "En attente";
+            }
+
+            if (_timer.GetTimerIsEnabled())
+            {
+                int seconds = (int)Math.Ceiling(_timer.GetCurrentTime());
+                text += "   |   " + (_timer.IsMatchTimerRunning ? "Match" : "Échauffement")
+                      + " " + (seconds / 60).ToString("D2") + ":" + (seconds % 60).ToString("D2");
+            }
+
+            return text;
+        }
+
+        /// -------------------------------------------------------------
+        /// Updates live scores on the display (called after each point
+        /// scored by a referee).
+        /// -------------------------------------------------------------
+        public void UpdateLiveScores()
+        {
+            if (_displayWindow == null || _currentPhase == null) return;
+
+            if (_currentPhase is PoolPhase)
+                RefreshFields();
+            else if (_currentPhase is TreePhase)
+                RefreshBracket();
+        }
+
+        #endregion
+
+        #region ---- Referee (web) access ----
+
+        /// ----------------------------------------------------------------
+        /// A score was changed by a referee. If the match is already in the
+        /// standings, its result is replaced; then screens are refreshed.
+        /// ----------------------------------------------------------------
+        public void OnMatchScoreChanged(Match match)
+        {
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+
+            if (poolPhase != null && match != null && match.Committed)
+            {
+                poolPhase.CommitMatch(match);
+                poolPhase.UpdateAllRankings();
+                RefreshRankings();
+            }
+
+            UpdateLiveScores();
+        }
+
+        /// -----------------------------------------------------------
+        /// Gets a match of the CURRENT phase by its key (case-insensitive).
+        /// Returns null if the key is unknown, or belongs to a past phase.
+        /// -----------------------------------------------------------
         public Match GetMatchByKey(string key)
         {
+            key = PrivateKeyGenerator.Normalize(key);
             if (!IsValidKey(key))
                 return null;
 
-            if (_currentPhase != _finalBracket)
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (poolPhase != null)
             {
-                PoolPhase currentPoolPhase = _currentPhase as PoolPhase;
-
-                foreach (Pool tempPool in currentPoolPhase.GetPools())
+                foreach (Pool pool in poolPhase.GetPools())
                 {
-                    foreach (Match match in tempPool.GetMatches())
+                    foreach (Match match in pool.GetMatches())
                     {
                         if (match.Key == key)
                             return match;
                     }
                 }
+                return null;
             }
-            else
+
+            TreePhase treePhase = _currentPhase as TreePhase;
+            if (treePhase != null)
             {
-                foreach (Match match in _finalBracket.GetMatches())
+                foreach (Match match in treePhase.GetMatches())
                 {
                     if (match.Key == key)
                         return match;
@@ -634,15 +553,96 @@ namespace ChassieuVolleyTournament
             return null;
         }
 
-        /// -------------------------------------------
-        /// Starts the corresponding tournament timer.
-        /// -------------------------------------------
-        public void StartTimer(bool IsMatch = true)
+        /// <summary>True if referees may currently change this match's score.</summary>
+        public bool IsMatchActive(Match match)
         {
-            _lastTimerTime = 0;
-            _timer.StartTimer(IsMatch);
+            return _currentPhase != null && _currentPhase.IsMatchActive(match);
         }
-        public void StopTimer() => _timer.StopTimer();
+
+        /// <summary>True if the match was locked (finished) and referees can't change it.</summary>
+        public bool IsMatchLocked(Match match)
+        {
+            return match != null && match.Locked;
+        }
+
+        /// -------------------------------------------------------------
+        /// Matches the staff can lock/unlock: finished matches of a pool
+        /// phase, or every bracket match in the final phase.
+        /// -------------------------------------------------------------
+        public List<KeyValuePair<string, Match>> GetLockableMatches()
+        {
+            var list = new List<KeyValuePair<string, Match>>();
+
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (poolPhase != null)
+            {
+                foreach (Pool pool in poolPhase.GetPools())
+                {
+                    foreach (Match m in pool.GetMatches())
+                    {
+                        if (!m.Committed) continue;
+                        list.Add(new KeyValuePair<string, Match>(
+                            m.Team1.Name + " " + m.ScoreTeam1 + " - " + m.ScoreTeam2 + " " + m.Team2.Name + "   [" + m.Key + "]", m));
+                    }
+                }
+            }
+
+            TreePhase treePhase = _currentPhase as TreePhase;
+            if (treePhase != null)
+            {
+                foreach (string slot in TreePhase.Slots)
+                {
+                    Match m = treePhase.GetMatchBySlot(slot);
+                    if (m == null) continue;
+                    list.Add(new KeyValuePair<string, Match>(
+                        slot + " : " + m.Team1.Name + " " + m.ScoreTeam1 + " - " + m.ScoreTeam2 + " " + m.Team2.Name + "   [" + m.Key + "]", m));
+                }
+            }
+
+            return list;
+        }
+
+        /// <summary>Short text shown to referees: field number, "upcoming", "finished"...</summary>
+        public string DescribeMatch(Match match)
+        {
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (poolPhase != null)
+            {
+                int field = poolPhase.GetFieldOf(match);
+                if (field > 0) return "Terrain " + field;
+                if (match.Locked) return "Match terminé (verrouillé)";
+                return match.Committed ? "Match terminé (corrections ouvertes)" : "Match à venir";
+            }
+
+            TreePhase treePhase = _currentPhase as TreePhase;
+            if (treePhase != null)
+                return treePhase.DescribeMatch(match) + (match.Locked ? " (verrouillé)" : "");
+
+            return "Match";
+        }
+
+        public void AddValidKey(string key)
+        {
+            lock (_keysLock) { _validKeys.Add(key); }
+        }
+
+        public bool IsValidKey(string key)
+        {
+            lock (_keysLock) { return key != null && _validKeys.Contains(key); }
+        }
+
+        #endregion
+
+        #region ---- Getters & Setters ----
+
+        public static Tournament Instance => _instance.Value;
+
+        public void SetWindows(DisplayWindow display, StaffWindow staff)
+        {
+            _displayWindow = display;
+            _staffWindow = staff;
+        }
+
         public DisplayWindow GetDisplayWindow() => _displayWindow;
         public StaffWindow GetStaffWindow() => _staffWindow;
         public Phase GetCurrentPhase() => _currentPhase;

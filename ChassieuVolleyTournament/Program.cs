@@ -1,178 +1,173 @@
-﻿#region ---- Includes ---- 
-using System;
-using System.Diagnostics;
-using System.Threading.Tasks;
+﻿using System;
+using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
-using System.Collections.Generic;
-
-#endregion
 
 namespace ChassieuVolleyTournament
 {
     /// ------------------------------------------------------
     /// Entry point of the application.
-    /// Initializes windows, timer, and referee web server.
-    /// Also manages the application main loop and data keys.
+    /// Creates the two windows, the UI timer, the referee web
+    /// server and the Internet tunnel (so referees can connect
+    /// from any network).
     /// ------------------------------------------------------
     static class Program
     {
-        #region ---- Properties ----
-        static Dictionary<string, Team[]> validKeysWithTeams;
-
         public static DisplayWindow window1;
         public static StaffWindow window2;
 
-        private static Timer timer;
-        private static RefereeWebServer refereeWebServer;
+        private static System.Windows.Forms.Timer uiTimer;
+        private static RefereeWebServer webServer;
+        private static TunnelManager tunnel;
 
-        #endregion
+        private static string tunnelMessage = "";
+        private static string publicUrl;
 
-        #region ---- Methods & Tasks ----
-        /// --------------------------------------------------
-        /// Main method — initializes the application,
-        /// sets up windows, starts web server and main loop.
-        /// --------------------------------------------------
         [STAThread]
         static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
+            bool createdNew;
+            using (var mutex = new Mutex(true, @"Local\ChassieuVolleyTournament", out createdNew))
+            {
+                if (!createdNew)
+                {
+                    MessageBox.Show("L'application est déjà ouverte.", "Chassieu Volley Tournament",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
 
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+
+                Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+                Application.ThreadException += (s, e) => ReportError(e.Exception);
+                AppDomain.CurrentDomain.UnhandledException += (s, e) => ReportError(e.ExceptionObject as Exception);
+
+                try
+                {
+                    Run();
+                }
+                catch (Exception ex)
+                {
+                    ReportError(ex);
+                }
+                finally
+                {
+                    Shutdown();
+                }
+            }
+        }
+
+        private static void Run()
+        {
             window1 = new DisplayWindow();
             window2 = new StaffWindow();
-            timer = new Timer();
 
             Tournament.Instance.SetWindows(window1, window2);
+
+            // Closing either window ends the application (it used to keep running invisibly).
+            window1.FormClosed += (s, e) => Application.Exit();
+            window2.FormClosed += (s, e) => Application.Exit();
 
             window1.Show();
             window2.Show();
 
-            EventHandler onIdle = null;
-            onIdle = (s, e) =>
+            // Build the staff table before the tournament pushes data into it.
+            window2.EnsureLayout();
+
+            Tournament.Instance.InitializeMorningPhase();
+
+            // Countdown: ticks on the UI thread, so no cross-thread access to the controls.
+            uiTimer = new System.Windows.Forms.Timer { Interval = 100 };
+            uiTimer.Tick += (s, e) =>
             {
-                Application.Idle -= onIdle;
-                Tournament.Instance.InitializeMorningPhase();
-
-                SetKeysInfo();
-
-                Task.Run(() => StartWebServer());
+                try { Tournament.Instance.CycleTimer(); }
+                catch (Exception ex) { AppPaths.Log("Timer : " + ex); }
             };
-            Application.Idle += onIdle;
+            uiTimer.Start();
 
-            window1.Refresh();
-            window2.Refresh();
-
-            Task.Run(() => MainLoop());
+            StartWeb();
 
             Application.Run();
         }
 
-        /// -------------------------------------------------------
-        /// Scans current tournament phase and collects match keys
-        /// with their corresponding team pairs.
-        /// -------------------------------------------------------
-        public static void SetKeysInfo()
+        /// -----------------------------------------------------
+        /// Starts the web server, then the Internet tunnel.
+        /// -----------------------------------------------------
+        private static void StartWeb()
         {
-            validKeysWithTeams = new Dictionary<string, Team[]>();
+            webServer = new RefereeWebServer(window2);
 
-            var phase = Tournament.Instance.GetCurrentPhase() as PoolPhase;
-            if (phase != null)
+            if (!webServer.Start(8080))
             {
-                foreach (Pool pool in phase.GetPools())
-                {
-                    foreach (Match match in pool.Matches)
-                    {
-                        if (!string.IsNullOrEmpty(match.Key))
-                        {
-                            validKeysWithTeams[match.Key] = new Team[] { match.Team1, match.Team2 };
-                        }
-                    }
-                }
+                window2.SetWebInfo("Serveur web impossible à démarrer (voir log.txt dans " + AppPaths.DataDir + ")", null, null);
+                return;
+            }
+
+            tunnel = new TunnelManager();
+            tunnel.StateChanged += (state, message) => OnUi(() => { tunnelMessage = message; UpdateWebInfo(); });
+            tunnel.UrlChanged += url => OnUi(() => { publicUrl = url; UpdateWebInfo(); });
+
+            UpdateWebInfo();
+            tunnel.Start(webServer.Port);
+        }
+
+        private static void UpdateWebInfo()
+        {
+            if (webServer == null || window2 == null || window2.IsDisposed) return;
+
+            string local = null;
+            if (webServer.AcceptsNetworkClients)
+            {
+                var addresses = RefereeWebServer.GetLocalAddresses();
+                if (addresses.Count > 0)
+                    local = string.Join("   ", addresses.Select(a => "http://" + a + ":" + webServer.Port + "/"));
             }
             else
             {
-                var FinalPhase = Tournament.Instance.GetCurrentPhase() as TreePhase;
-
-                if (FinalPhase == null) return;
-
-                foreach (Match match in FinalPhase.MatchsPrincipal)
-                {
-                    if (!string.IsNullOrEmpty(match.Key))
-                    {
-                        validKeysWithTeams[match.Key] = new Team[] { match.Team1, match.Team2 };
-                    }
-                }
-
-                foreach (Match match in FinalPhase.MatchsConsolant)
-                {
-                    if (!string.IsNullOrEmpty(match.Key))
-                    {
-                        validKeysWithTeams[match.Key] = new Team[] { match.Team1, match.Team2 };
-                    }
-                }
+                local = "http://localhost:" + webServer.Port + "/   (ce PC uniquement)";
             }
 
-            
+            string status = "Internet : " + (string.IsNullOrEmpty(tunnelMessage) ? "..." : tunnelMessage);
+            if (!webServer.AcceptsNetworkClients)
+                status += "   |   R\u00e9seau local : indisponible (lancez l'application en administrateur pour l'activer)";
+
+            window2.SetWebInfo(status, publicUrl, local);
         }
 
-        /// ----------------------------------------------------
-        /// Sends formatted team name strings to the web server
-        /// for each valid key.
-        /// ----------------------------------------------------
-        public static void GiveWebServerKeysInfo()
+        private static void OnUi(Action action)
         {
-            foreach (var kvp in validKeysWithTeams)
+            try
             {
-                refereeWebServer.SetInfoForKey(kvp.Key, $"{kvp.Value[0].Name}|{kvp.Value[1].Name}");
+                if (window2 != null && !window2.IsDisposed && window2.IsHandleCreated)
+                    window2.BeginInvoke(action);
             }
-        }
-
-        /// ----------------------------------------------
-        /// Sends the dictionary of valid keys and teams
-        /// directly to the web server.
-        /// ----------------------------------------------
-        public static void GiveWebServerKeys()
-        {
-            refereeWebServer.AddValidKeys(validKeysWithTeams);
-        }
-
-        /// -------------------------------------------------------
-        /// Main tournament loop — continuously updates tournament
-        /// timer using a Stopwatch, with small async delay.
-        /// -------------------------------------------------------
-        public static async Task MainLoop()
-        {
-            Stopwatch stopwatch = new Stopwatch();
-            stopwatch.Start();
-
-            while (true)
+            catch (Exception ex)
             {
-                Tournament.Instance.CycleTimer(stopwatch);
-                await Task.Delay(50);
+                AppPaths.Log("OnUi : " + ex.Message);
             }
         }
 
-        /// ---------------------------------------------------------
-        /// Starts the referee web server if valid keys are present,
-        /// and provides it with necessary match/team info.
-        /// ---------------------------------------------------------
-        static async Task StartWebServer()
+        private static void Shutdown()
         {
-            if (validKeysWithTeams == null || validKeysWithTeams.Count == 0)
-                return;
-
-            refereeWebServer = new RefereeWebServer(validKeysWithTeams.Keys, Tournament.Instance.GetDisplayWindow());
-
-            GiveWebServerKeys();
-
-            await refereeWebServer.Start();
+            try { uiTimer?.Stop(); } catch { }
+            try { webServer?.Stop(); } catch { }
+            try { tunnel?.Dispose(); } catch { }   // also kills cloudflared
         }
 
-        public static void TriggerResetWebServer()
+        private static void ReportError(Exception ex)
         {
-            refereeWebServer.ResetKeys();
-        }
+            if (ex == null) return;
 
-        #endregion
+            AppPaths.Log("Erreur : " + ex);
+
+            try
+            {
+                MessageBox.Show("Une erreur est survenue :\n\n" + ex.Message +
+                    "\n\nDétails dans " + AppPaths.DataDir + "\\log.txt",
+                    "Chassieu Volley Tournament", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch { }
+        }
     }
 }

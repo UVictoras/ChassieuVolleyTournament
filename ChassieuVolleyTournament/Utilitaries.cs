@@ -55,8 +55,9 @@ namespace ChassieuVolleyTournament
     }
 
     /// ------------------------------------------------------------
-    /// Custom timer logic for match and skirmish durations,
-    /// supporting start, decrement, stop, and event notifications.
+    /// Countdown timer used for matches and warm-ups.
+    /// A warm-up that ends must NOT count as a finished match:
+    /// the two cases raise two different events.
     /// ------------------------------------------------------------
     public class Timer
     {
@@ -66,21 +67,24 @@ namespace ChassieuVolleyTournament
         private float skirmishTime;
 
         private bool isTimerStarted;
+        private bool isMatchTimer;
 
-        public event EventHandler OnTimerStop;
+        /// <summary>Raised when a MATCH timer ends (naturally or when forced).</summary>
+        public event EventHandler OnMatchEnd;
+
+        /// <summary>Raised when a WARM-UP timer ends.</summary>
+        public event EventHandler OnWarmupEnd;
 
         #endregion
 
         #region ---- Constructor ----
-        /// -------------------------------------------------------------
-        /// Initializes timer with default match and skirmish durations.
-        /// -------------------------------------------------------------
         public Timer()
         {
             this.currentTimer = 0.0f;
             this.matchTime = 900.0f;
             this.skirmishTime = 300.0f;
             this.isTimerStarted = false;
+            this.isMatchTimer = false;
         }
 
         #endregion
@@ -88,18 +92,19 @@ namespace ChassieuVolleyTournament
         #region ---- Methods ---- 
 
         /// -----------------------------------------------
-        /// Starts the timer using match or skirmish time.
+        /// Starts the timer using match or warm-up time.
         /// -----------------------------------------------
         public void StartTimer(bool isMatch)
         {
             currentTimer = isMatch ? matchTime : skirmishTime;
+            isMatchTimer = isMatch;
             isTimerStarted = true;
-            Debug.WriteLine($"[Timer] StartTimer -> {currentTimer}s");
+            Debug.WriteLine($"[Timer] StartTimer -> {currentTimer}s (match: {isMatch})");
         }
 
         /// ----------------------------------------------------
-        /// Decrements timer by a given time step.
-        /// Stops the timer automatically if time reaches zero.
+        /// Decrements timer by a given time step and finishes
+        /// it automatically when the time reaches zero.
         /// ----------------------------------------------------
         public void DecrementTimer(float time)
         {
@@ -111,52 +116,53 @@ namespace ChassieuVolleyTournament
                 StopTimer();
         }
 
-        /// ------------------------------------------------
-        /// Stops the timer and triggers OnTimerStop event.
-        /// Invokes on correct thread for UI controls.
-        /// ------------------------------------------------
+        /// ----------------------------------------------------------
+        /// Ends the running timer now and raises the matching event.
+        /// Does nothing if no timer is running (this prevents a match
+        /// from being counted twice).
+        /// ----------------------------------------------------------
         public void StopTimer()
+        {
+            if (!isTimerStarted) return;
+
+            bool wasMatch = isMatchTimer;
+
+            currentTimer = 0.0f;
+            isTimerStarted = false;
+            isMatchTimer = false;
+
+            if (wasMatch)
+                OnMatchEnd?.Invoke(this, EventArgs.Empty);
+            else
+                OnWarmupEnd?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// -------------------------------------------------
+        /// Stops the timer WITHOUT raising any event
+        /// (used to cancel a timer started by mistake).
+        /// -------------------------------------------------
+        public void CancelTimer()
         {
             currentTimer = 0.0f;
             isTimerStarted = false;
-
-            if (OnTimerStop != null)
-            {
-                foreach (Delegate d in OnTimerStop.GetInvocationList())
-                {
-                    var handler = (EventHandler)d;
-                    Debug.WriteLine($"[Timer] Invoking {handler.Method.Name} on {handler.Target?.GetType().FullName}");
-
-                    if (handler.Target is Control ctrl && ctrl.InvokeRequired)
-                    {
-                        ctrl.BeginInvoke(handler, this, EventArgs.Empty);
-                    }
-                    else
-                    {
-                        handler(this, EventArgs.Empty);
-                    }
-                }
-            }
+            isMatchTimer = false;
         }
 
         #endregion
 
         #region ---- Getters & Setters ----
-        /// --------------------------------------------
-        /// Returns the current timer value in seconds.
-        /// --------------------------------------------
         public float GetCurrentTime()
         {
             return currentTimer;
         }
 
-        /// -----------------------------------------------
-        /// Returns whether the timer is currently active.
-        /// -----------------------------------------------
         public bool GetTimerIsEnabled()
         {
             return isTimerStarted;
         }
+
+        /// <summary>True while a match (not a warm-up) countdown is running.</summary>
+        public bool IsMatchTimerRunning => isTimerStarted && isMatchTimer;
 
         #endregion
     }

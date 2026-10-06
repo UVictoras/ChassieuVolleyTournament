@@ -19,10 +19,19 @@
         #endregion
 
         #region ---- Constructor ----
-        /// -----------------------------------------------------
-        /// Initializes a new Phase instance with empty matches.
-        /// -----------------------------------------------------
         public Phase() { }
+
+        #endregion
+
+        #region ---- Methods ----
+        /// ---------------------------------------------------------
+        /// True when referees may change the score of this match
+        /// (i.e. the match is being played, or has been played).
+        /// ---------------------------------------------------------
+        public virtual bool IsMatchActive(Match match)
+        {
+            return true;
+        }
 
         #endregion
     }
