@@ -47,7 +47,7 @@ namespace ChassieuVolleyTournament
 
         public StaffWindow()
         {
-            Text = "Infos priv\u00e9es du tournoi";
+            Text = "Tournoi de Chassieu Volley - Staff";
             WindowState = FormWindowState.Maximized;
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(10, 40, 80);
@@ -440,7 +440,7 @@ namespace ChassieuVolleyTournament
 
         private void Warn(string message)
         {
-            MessageBox.Show(this, message, "Chassieu Volley Tournament", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, message, "Tournoi de Chassieu Volley", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         /// <summary>If a timer is running, asks before replacing it.</summary>

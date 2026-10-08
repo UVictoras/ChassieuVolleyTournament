@@ -1,4 +1,4 @@
-# Chassieu Volley Tournament
+# Tournoi de Chassieu Volley
 
 Application Windows (WinForms, .NET Framework 4.7.2) de gestion du tournoi : affichage public, fenêtre staff, et page web pour les arbitres.
 

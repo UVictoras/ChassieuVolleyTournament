@@ -362,6 +362,8 @@ namespace ChassieuVolleyTournament
 
             Pool[] pools = poolPhase.GetPools();
 
+            _displayWindow?.SetPoolTitles(poolPhase == _levelPhase);
+
             for (int i = 0; i < pools.Length; i++)
             {
                 List<Team> ordered = pools[i].GetTeams();
@@ -447,6 +449,28 @@ namespace ChassieuVolleyTournament
         public void RefreshStatus()
         {
             _staffWindow?.SetStatus(GetStatusText());
+
+            if (_displayWindow != null)
+            {
+                _displayWindow.SetPhaseTitle(GetPhaseTitle());
+                _displayWindow.SetTimerMode(!_timer.GetTimerIsEnabled() ? ""
+                    : (_timer.IsMatchTimerRunning ? "MATCH" : "ÉCHAUFFEMENT"));
+            }
+        }
+
+        /// <summary>Subtitle of the public display header.</summary>
+        public string GetPhaseTitle()
+        {
+            PoolPhase poolPhase = _currentPhase as PoolPhase;
+            if (poolPhase != null)
+            {
+                string name = poolPhase == _morningPhase ? "POULES DU MATIN" : "POULES DE NIVEAU";
+                return poolPhase.IsFinished
+                    ? name + " · TERMINÉES"
+                    : name + " · TOUR " + (poolPhase.CurrentRound + 1) + "/" + PoolPhase.RoundCount;
+            }
+
+            return _currentPhase is TreePhase ? "PHASE FINALE" : "";
         }
 
         public string GetStatusText()

@@ -31,7 +31,7 @@ namespace ChassieuVolleyTournament
             {
                 if (!createdNew)
                 {
-                    MessageBox.Show("L'application est déjà ouverte.", "Chassieu Volley Tournament",
+                    MessageBox.Show("L'application est déjà ouverte.", "Tournoi de Chassieu Volley",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
@@ -165,7 +165,7 @@ namespace ChassieuVolleyTournament
             {
                 MessageBox.Show("Une erreur est survenue :\n\n" + ex.Message +
                     "\n\nDétails dans " + AppPaths.DataDir + "\\log.txt",
-                    "Chassieu Volley Tournament", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    "Tournoi de Chassieu Volley", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             catch { }
         }

@@ -1,854 +1,411 @@
-﻿#region ---- Includes ---- 
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Windows.Forms;
-
-#endregion
 
 namespace ChassieuVolleyTournament
 {
     /// --------------------------------------------------------------------------------------
-    /// Represents the main display window for the Chassieu Volleyball Tournament.
-    /// Handles pool layouts, final brackets, pause screens, timers, court and ranking panels, 
-    /// and live updates of team names, scores, and rankings.
+    /// Public display of the Chassieu Volleyball Tournament (projector / TV).
+    /// Pool phases: header + 3 courts + 4 rankings. Final phase: both brackets.
+    /// Pause: logo and a message.
+    ///
+    /// Everything is drawn proportionally to the window size (any resolution works), and
+    /// the data is kept in this class, so rebuilding a layout never loses anything.
     /// --------------------------------------------------------------------------------------
     public class DisplayWindow : Form
     {
         #region ---- Properties ----
-        private Label timerText, timerValue;
-        private PictureBox logo;
 
-        private Panel[] matchPanels = new Panel[3];
-        private Label[][] courtLabels = new Label[3][];
-        private Panel[] rankingPanels = new Panel[4];
-        private Label[] refereeLabels = new Label[3];
+        private enum Mode { None, Pool, Final, Pause }
 
-        private Panel matchAreaPanel;
-        private Panel rankingAreaPanel;
+        private Mode mode = Mode.None;
+        private GradientPanel root;
 
-        private Label pauseLabel;
+        private HeaderBar header;
+        private readonly CourtCard[] courts = new CourtCard[3];
+        private readonly RankingCard[] rankings = new RankingCard[4];
+        private BracketView bracket;
+        private PauseView pauseView;
 
-        private Dictionary<string, Panel> bracketBlocks = new Dictionary<string, Panel>();
+        // ---- data (survives layout changes) ----
+        private readonly CourtData[] courtData = { new CourtData(), new CourtData(), new CourtData() };
+        private readonly RankData[] rankData = { new RankData(), new RankData(), new RankData(), new RankData() };
+        private readonly Dictionary<string, BracketMatch> bracketData = new Dictionary<string, BracketMatch>();
+        private readonly Dictionary<string, string> champions = new Dictionary<string, string>();
+
+        private string timerText = "00:00";
+        private string timerMode = "";
+        private bool timerCritical;
+        private string phaseTitle = "";
+        private string pauseText = "Pause midi - Reprise à 13h30";
+
+        private static readonly string[] MorningTitles = { "POULE 1", "POULE 2", "POULE 3", "POULE VOLANTE" };
+        private static readonly string[] LevelTitles = { "NIVEAU 1", "NIVEAU 2", "NIVEAU 3", "NIVEAU 4" };
 
         #endregion
 
         #region ---- Constructor ----
 
-        /// ------------------------------------------------
-        /// Initializes a new instance of DisplayWindow.
-        /// Sets window title, maximized state, background,
-        /// icon, and triggers the pool layout on show.
-        /// ------------------------------------------------
         public DisplayWindow()
         {
-            Text = "Chassieu Volley Tournament Display";
+            Text = "Tournoi de Chassieu Volley - Affichage";
             WindowState = FormWindowState.Maximized;
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(0, 38, 84);
+            BackColor = Theme.NavyBottom;
+            DoubleBuffered = true;
+
             Icon icon = AppPaths.AppIcon;
             if (icon != null) Icon = icon;
 
-            bracketBlocks = new Dictionary<string, Panel>();
+            for (int i = 0; i < rankData.Length; i++)
+                rankData[i].Title = MorningTitles[i];
 
             Shown += (s, e) => BeginInvoke(new Action(PoolLayout));
         }
 
         #endregion
 
-        #region ---- Methods ----
+        #region ---- Layouts ----
 
-        #region ---- Pool Layout ----
+        /// <summary>Removes and disposes the current layout.</summary>
+        private void ResetRoot()
+        {
+            SuspendLayout();
 
-        /// --------------------------------------------------
-        /// Creates the pool layout:
-        /// - Match area with courts and upcoming matches
-        /// - Timer and tournament logo
-        /// - Ranking area with 4 ranking panels
-        /// --------------------------------------------------
+            mode = Mode.None;     // no layout work while the old controls are being removed
+
+            if (root != null)
+            {
+                root.SizeChanged -= OnRootSizeChanged;
+                Controls.Remove(root);
+                root.Dispose();      // disposes the children; shared images are not owned by them
+            }
+
+            root = new GradientPanel { Dock = DockStyle.Fill };
+            root.SizeChanged += OnRootSizeChanged;
+            Controls.Add(root);
+
+            header = null;
+            bracket = null;
+            pauseView = null;
+            for (int i = 0; i < courts.Length; i++) courts[i] = null;
+            for (int i = 0; i < rankings.Length; i++) rankings[i] = null;
+
+            ResumeLayout();
+        }
+
+        private void OnRootSizeChanged(object sender, EventArgs e)
+        {
+            ApplyLayout();
+        }
+
+        private HeaderBar CreateHeader()
+        {
+            var h = new HeaderBar { Logo = AppPaths.Logo };
+            root.Controls.Add(h);
+            UpdateHeader(h);
+            return h;
+        }
+
+        private void UpdateHeader(HeaderBar h)
+        {
+            h.Subtitle = phaseTitle;
+            h.TimerText = timerText;
+            h.TimerMode = timerMode;
+            h.TimerCritical = timerCritical;
+            h.Invalidate();
+        }
+
+        /// -----------------------------------------------------
+        /// Pool phases: header, 3 courts, 4 ranking tables.
+        /// -----------------------------------------------------
         public void PoolLayout()
         {
-            Controls.Clear();
+            ResetRoot();
 
-            matchAreaPanel = new Panel
-            {
-                Location = new Point(0, 0),
-                Size = new Size(ClientSize.Width, 650),
-                BackColor = Color.FromArgb(10, 43, 75),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-            };
-            Controls.Add(matchAreaPanel);
+            header = CreateHeader();
 
-            rankingAreaPanel = new Panel
-            {
-                Location = new Point(0, 650),
-                Size = new Size(ClientSize.Width, ClientSize.Height - 650),
-                BackColor = Color.FromArgb(243, 167, 18),
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
-            Controls.Add(rankingAreaPanel);
-
-            var df = new Font("Segoe UI", 14, FontStyle.Bold);
-            var tf = new Font("Consolas", 42, FontStyle.Bold);
-
-            // ====== TIMER ======
-            timerText = new Label
-            {
-                Text = "TEMPS RESTANT :",
-                ForeColor = Color.White,
-                Font = df,
-                AutoSize = true
-            };
-            matchAreaPanel.Controls.Add(timerText);
-
-            timerValue = new Label
-            {
-                Text = "00:00",
-                Font = tf,
-                ForeColor = Color.Red,
-                BackColor = Color.Black,
-                BorderStyle = BorderStyle.Fixed3D,
-                AutoSize = true
-            };
-            matchAreaPanel.Controls.Add(timerValue);
-
-            logo = new PictureBox
-            {
-                Image = AppPaths.Logo,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Size = new Size(150, 150)
-            };
-            matchAreaPanel.Controls.Add(logo);
-
-            // ====== MATCH PANELS ET COURTS ======
             for (int i = 0; i < 3; i++)
             {
-                int x = 330 * (i + 1) + 200 * i;
-
-                // ===== PROCHAIN MATCH =====
-                var mp = CreateMatchPanel(x, 200);
-                matchPanels[i] = mp;
-                matchAreaPanel.Controls.Add(mp);
-
-                // ===== TITRE DU TERRAIN (centré au-dessus du panneau) =====
-                Label terrainTitle = new Label
-                {
-                    Text = $"TERRAIN {i + 1}",
-                    Font = new Font("Segoe UI", 24, FontStyle.Bold),
-                    ForeColor = Color.White,
-                    AutoSize = true
-                };
-                matchAreaPanel.Controls.Add(terrainTitle);
-
-                // Centrage horizontal dynamique du titre au-dessus du panel
-                matchAreaPanel.Layout += (s, e) =>
-                {
-                    terrainTitle.Location = new Point(
-                        mp.Left + (mp.Width / 2) - (terrainTitle.Width / 2),
-                        mp.Top - 60
-                    );
-                };
-
-                // ===== TERRAIN (image) =====
-                var courtPanel = CreateCourtPanel(x, 320, i);
-                matchAreaPanel.Controls.Add(courtPanel);
-
-                Label refereeLabel = new Label
-                {
-                    Text = $"Arbitre : \r\nÉquipe {i + 4}",
-                    Font = new Font("Segoe UI", 16, FontStyle.Italic),
-                    ForeColor = Color.White,
-                    AutoSize = true,
-                    Location = new Point(courtPanel.Right + 30, courtPanel.Top + (courtPanel.Height / 2) - 20)
-                };
-                matchAreaPanel.Controls.Add(refereeLabel);
-
-                refereeLabels[i] = refereeLabel;
-                matchAreaPanel.Controls.Add(refereeLabel);
+                courts[i] = new CourtCard { Number = i + 1, Data = courtData[i] };
+                root.Controls.Add(courts[i]);
             }
 
-            // ===== BOUTONS =====
-            matchAreaPanel.Controls.Add(CreateStyledButton("MATCHS", 50, 300, Color.FromArgb(243, 167, 18)));
-            rankingAreaPanel.Controls.Add(CreateStyledButton("CLASSEMENT", 50, 70, Color.FromArgb(10, 43, 75)));
-
-            // ===== CLASSEMENTS =====
-            string[] titles = { "POULE 1", "POULE 2", "POULE 3", "POULE VOLANTE" };
-            for (int i = 0; i < titles.Length; i++)
+            for (int i = 0; i < 4; i++)
             {
-                var rp = CreateRankingPanel(144 * (i + 1) + 300 * i, 70, titles[i]);
-                rankingPanels[i] = rp;
-                rankingAreaPanel.Controls.Add(rp);
+                rankings[i] = new RankingCard { Data = rankData[i] };
+                root.Controls.Add(rankings[i]);
             }
 
-            // ===== PLACEMENT DYNAMIQUE =====
-            matchAreaPanel.Layout += (s, e) =>
-            {
-                int w = matchAreaPanel.ClientSize.Width;
-                timerText.Location = new Point((w / 2 - timerText.Width / 2), 20);
-                timerValue.Location = new Point((w / 2 - timerValue.Width / 2), 60);
-                logo.Location = new Point(w - logo.Width - 50, 20);
-            };
+            mode = Mode.Pool;      // all controls exist now: resizing may lay them out
+            ApplyLayout();
         }
 
-
-        #endregion
-
-        #region ---- Final Layout ----
-
-        /// -------------------------------------------------------------
-        /// Displays the final 8-team bracket layout, including main and 
-        /// consolation phases, finals, 3rd place, and winner panels, 
-        /// with connector lines.
-        /// -------------------------------------------------------------
+        /// -----------------------------------------------------
+        /// Final phase: principal and consolation brackets.
+        /// -----------------------------------------------------
         public void FinalLayout()
         {
-            Controls.Clear();
-            BackColor = Color.FromArgb(0, 38, 84);
+            ResetRoot();
 
-            var title1 = new Label
-            {
-                Text = "PHASE PRINCIPALE",
-                Font = new Font("Segoe UI", 24, FontStyle.Bold),
-                ForeColor = Color.White,
-                AutoSize = true,
-                Location = new Point((ClientSize.Width - 400) / 2, 20)
-            };
-            Controls.Add(title1);
+            header = CreateHeader();
 
-            var title2 = new Label
-            {
-                Text = "PHASE CONSOLANTE",
-                Font = new Font("Segoe UI", 24, FontStyle.Bold),
-                ForeColor = Color.White,
-                AutoSize = true,
-                Location = new Point((ClientSize.Width - 420) / 2, ClientSize.Height / 2 + 20)
-            };
-            Controls.Add(title2);
+            bracket = new BracketView { Matches = bracketData, Champions = champions };
+            bracket.ChampionClicked += OnChampionClicked;
+            root.Controls.Add(bracket);
 
-            var dividerLine = new Panel
-            {
-                BackColor = Color.White,
-                Height = 4,
-                Width = ClientSize.Width,
-                Location = new Point(0, ClientSize.Height / 2),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-            };
-            Controls.Add(dividerLine);
-
-            BuildBracket((ClientSize.Width - 1100) / 2 - 110, 100, "P"); 
-            BuildBracket((ClientSize.Width - 1100) / 2 - 110, ClientSize.Height / 2 + 100, "C");
-
-            logo = new PictureBox
-            {
-                Image = AppPaths.Logo,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Size = new Size(150, 150),
-                Location = new Point(ClientSize.Width - 180, 20)
-            };
-            Controls.Add(logo);
-
-            timerValue = new Label
-            {
-                Text = "00:00",
-                Font = new Font("Consolas", 30, FontStyle.Bold),
-                ForeColor = Color.Red,
-                BackColor = Color.Black,
-                BorderStyle = BorderStyle.Fixed3D,
-                AutoSize = true,
-                Location = new Point(40, 20)
-            };
-            Controls.Add(timerValue);
+            mode = Mode.Final;
+            ApplyLayout();
         }
 
-        #endregion
-
-            #region ---- Pause Layout ----
-
-        /// ---------------------------------------------------
-        /// Displays a pause screen with message label
-        /// and tournament logo. Supports editing of the text.
-        /// ---------------------------------------------------
+        /// -----------------------------------------------------
+        /// Pause screen: click the text to change it.
+        /// -----------------------------------------------------
         public void PauseLayout()
         {
-            Controls.Clear();
-            BackColor = Color.FromArgb(0, 38, 84);
+            ResetRoot();
 
-            pauseLabel = new Label
+            pauseView = new PauseView { Logo = AppPaths.Logo, Message = pauseText };
+            pauseView.Clicked += () =>
             {
-                Text = "Pause midi - Reprise à 13h30",
-                Font = new Font("Segoe UI", 50, FontStyle.Bold),
-                ForeColor = Color.White,
-                AutoSize = true,
-                Location = new Point(ClientSize.Width / 2 - 500, ClientSize.Height / 2 - 200),
-                TextAlign = ContentAlignment.MiddleCenter
-            };
-            Controls.Add(pauseLabel);
-
-            pauseLabel.Click += (s, e) =>
-            {
-                using (var dlg = new TextInputDialog("Éditer", "Modifier le texte de pause :", pauseLabel.Text))
+                using (var dlg = new TextInputDialog("Éditer", "Modifier le texte de pause :", pauseText))
                 {
-                    if (dlg.ShowDialog(this) == DialogResult.OK)
+                    if (dlg.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(dlg.InputText))
                     {
-                        pauseLabel.Text = dlg.InputText;
+                        pauseText = dlg.InputText.Trim();
+                        pauseView.Message = pauseText;
+                        pauseView.Invalidate();
                     }
                 }
             };
+            root.Controls.Add(pauseView);
 
-            logo = new PictureBox
+            mode = Mode.Pause;
+            ApplyLayout();
+        }
+
+        /// -------------------------------------------------------------
+        /// Places the controls according to the current window size.
+        /// -------------------------------------------------------------
+        private void ApplyLayout()
+        {
+            if (root == null || mode == Mode.None) return;
+
+            int W = root.ClientSize.Width;
+            int H = root.ClientSize.Height;
+            if (W < 100 || H < 100) return;
+
+            int pad = Math.Max(12, W / 100);
+            int gap = Math.Max(12, W / 100);
+            int accent = Math.Max(3, H / 220);
+
+            switch (mode)
             {
-                Image = AppPaths.Logo,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                Size = new Size(500, 500),
-                Location = new Point(ClientSize.Width / 2 - 250, 475)
-            };
-            Controls.Add(logo);
+                case Mode.Pool:
+                {
+                    int headerH = (int)(H * 0.115);
+                    int top = accent + pad / 2;
+                    int courtsH = (int)(H * 0.505);
+                    int ranksTop = top + headerH + gap + courtsH + gap;
+                    int ranksH = H - ranksTop - pad;
+
+                    header.SetBounds(pad, top, W - 2 * pad, headerH);
+
+                    int cw = (W - 2 * pad - 2 * gap) / 3;
+                    for (int i = 0; i < 3; i++)
+                        courts[i].SetBounds(pad + i * (cw + gap), top + headerH + gap, cw, courtsH);
+
+                    int rw = (W - 2 * pad - 3 * gap) / 4;
+                    for (int i = 0; i < 4; i++)
+                        rankings[i].SetBounds(pad + i * (rw + gap), ranksTop, rw, ranksH);
+                    break;
+                }
+
+                case Mode.Final:
+                {
+                    int headerH = (int)(H * 0.105);
+                    int top = accent + pad / 2;
+
+                    header.SetBounds(pad, top, W - 2 * pad, headerH);
+                    bracket.SetBounds(pad, top + headerH + gap, W - 2 * pad, H - top - headerH - gap - pad);
+                    break;
+                }
+
+                case Mode.Pause:
+                    pauseView.SetBounds(0, 0, W, H);
+                    break;
+            }
+        }
+
+        private void OnChampionClicked(string prefix)
+        {
+            string current;
+            champions.TryGetValue(prefix, out current);
+
+            using (var dlg = new TextInputDialog("Éditer le vainqueur", "Nom de l'équipe gagnante :", current ?? ""))
+            {
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    champions[prefix] = dlg.InputText.Trim();
+                    bracket?.Invalidate();
+                }
+            }
         }
 
         #endregion
 
-            #region ---- Helpers ----
+        #region ---- Updates from the tournament ----
 
-        /// -----------------------------------------------
-        /// Creates a panel representing an upcoming match
-        /// at a specific location with default text.
-        /// -----------------------------------------------
-        private Panel CreateMatchPanel(int x, int y)
+        /// <summary>Teams and score shown on a court.</summary>
+        public void SetFieldText(int idx, string t1, string t2, string s1, string s2)
         {
-            var p = new Panel
-            {
-                Location = new Point(x, y),
-                Size = new Size(200, 80),
-                BackColor = Color.FromArgb(0, 51, 102),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            var lbl = new Label
-            {
-                Dock = DockStyle.Fill,
-                Text = "PROCHAIN MATCH\nÉQUIPE 1 VS ÉQUIPE 2\n📢 ARBITRE",
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                ForeColor = Color.White,
-                TextAlign = ContentAlignment.MiddleCenter
-            };
-            p.Controls.Add(lbl);
-            return p;
+            if (idx < 0 || idx >= courtData.Length) return;
+
+            CourtData d = courtData[idx];
+            if (d.Team1 == t1 && d.Team2 == t2 && d.Score1 == s1 && d.Score2 == s2) return;
+
+            d.Team1 = t1;
+            d.Team2 = t2;
+            d.Score1 = s1;
+            d.Score2 = s2;
+            courts[idx]?.Invalidate();
         }
 
-        /// -------------------------------------------------
-        /// Creates a panel representing a volleyball court,
-        /// with team labels, scores, and background image.
-        /// Stores labels for later updates.
-        /// -------------------------------------------------
-        private Panel CreateCourtPanel(int x, int y, int idx)
+        /// <summary>Referee of the match played on a court.</summary>
+        public void UpdateReferee(int courtIndex, string refereeName)
         {
-            var hp = new Panel
-            {
-                Location = new Point(x, y),
-                Size = new Size(200, 300),
-                BackgroundImage = AppPaths.Field,
-                BackgroundImageLayout = ImageLayout.Stretch,
-                BorderStyle = BorderStyle.FixedSingle
-            };
+            if (courtIndex < 0 || courtIndex >= courtData.Length) return;
 
-            // 🔹 Labels plus grands et mieux centrés
-            var top = CreateCourtLabel("ÉQUIPE 1", new Point(0, 30), new Size(hp.Width, 40), 14, ContentAlignment.TopCenter);
-            var bot = CreateCourtLabel("ÉQUIPE 2", new Point(0, hp.Height - 80), new Size(hp.Width, 40), 14, ContentAlignment.BottomCenter);
+            string value = refereeName ?? "-";
+            if (courtData[courtIndex].Referee == value) return;
 
-            var scT = CreateCourtLabel("0", new Point(0, 100), new Size(hp.Width, 40), 26, ContentAlignment.MiddleCenter);
-            var scB = CreateCourtLabel("0", new Point(0, 140), new Size(hp.Width, 40), 26, ContentAlignment.MiddleCenter);
-
-            hp.Controls.AddRange(new Control[] { top, bot, scT, scB });
-            courtLabels[idx] = new[] { top, bot, scT, scB };
-            return hp;
+            courtData[courtIndex].Referee = value;
+            courts[courtIndex]?.Invalidate();
         }
 
-        /// ------------------------------------------------------
-        /// Creates a label for a court panel at a given location,
-        /// with default font and colors (extended parameters).
-        /// ------------------------------------------------------
-        private Label CreateCourtLabel(string text, Point loc, Size? size = null, float fontSize = 10, ContentAlignment align = ContentAlignment.MiddleLeft)
+        /// <summary>The "next match" block of a court.</summary>
+        public void SetNextMatchText(int idx, string t1, string t2, string refName)
         {
-            var lbl = new Label
-            {
-                Text = text,
-                Location = loc,
-                AutoSize = false,
-                Font = new Font("Segoe UI", fontSize, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.Transparent,
-                TextAlign = align
-            };
+            if (idx < 0 || idx >= courtData.Length) return;
 
-            if (size.HasValue)
-                lbl.Size = size.Value;
-            else
-                lbl.AutoSize = true;
-
-            return lbl;
+            CourtData d = courtData[idx];
+            d.NextTeam1 = t1;
+            d.NextTeam2 = t2;
+            d.NextReferee = refName;
+            courts[idx]?.Invalidate();
         }
 
-
-        /// -------------------------------------------------
-        /// Creates a vertical styled button with a specific
-        /// color and location.
-        /// -------------------------------------------------
-        private Button CreateStyledButton(string txt, int x, int y, Color color)
+        /// <summary>Countdown, shown as MM:SS.</summary>
+        public void SetTimerText(float seconds)
         {
-            var b = new Button
-            {
-                Text = string.Join("\n", txt.ToCharArray()),
-                Location = new Point(x, y),
-                Size = new Size(50, 200),
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                BackColor = color,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
-            };
-            b.FlatAppearance.BorderSize = 0;
-            return b;
+            int total = Math.Max(0, (int)Math.Ceiling(seconds));
+            string text = (total / 60).ToString("D2") + ":" + (total % 60).ToString("D2");
+            bool critical = timerMode != "" && total <= 60;
+
+            if (text == timerText && critical == timerCritical) return;
+
+            timerText = text;
+            timerCritical = critical;
+            if (header != null) UpdateHeader(header);
         }
 
-        /// -------------------------------------------------
-        /// Creates a ranking panel with a title and a table
-        /// for team rank, points, and difference.
-        /// -------------------------------------------------
-        private Panel CreateRankingPanel(int x, int y, string title)
+        /// <summary>"MATCH", "ÉCHAUFFEMENT" or "" when no timer is running.</summary>
+        public void SetTimerMode(string modeText)
         {
-            var p = new Panel
-            {
-                Location = new Point(x, y),
-                Size = new Size(300, 200),
-                BackColor = Color.FromArgb(0, 51, 102),
-                BorderStyle = BorderStyle.FixedSingle,
-                Padding = new Padding(5)
-            };
+            modeText = modeText ?? "";
+            if (modeText == timerMode) return;
 
-            var lbl = new Label
-            {
-                Text = title,
-                Dock = DockStyle.Top,
-                Height = 25,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                ForeColor = Color.White,
-                TextAlign = ContentAlignment.MiddleCenter
-            };
-            p.Controls.Add(lbl);
+            timerMode = modeText;
+            if (modeText == "") timerCritical = false;
+            if (header != null) UpdateHeader(header);
+        }
 
-            var t = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 4,
-                RowCount = 5,
-                CellBorderStyle = TableLayoutPanelCellBorderStyle.Single
-            };
+        /// <summary>Subtitle of the header, e.g. "POULES DU MATIN · TOUR 3/8".</summary>
+        public void SetPhaseTitle(string title)
+        {
+            title = title ?? "";
+            if (title == phaseTitle) return;
 
-            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            phaseTitle = title;
+            if (header != null) UpdateHeader(header);
+        }
 
-            // ✅ Chaque ligne aura la même hauteur
-            for (int i = 0; i < t.RowCount; i++)
+        /// <summary>Titles of the four ranking tables (morning pools, or level pools).</summary>
+        public void SetPoolTitles(bool levelPhase)
+        {
+            string[] titles = levelPhase ? LevelTitles : MorningTitles;
+
+            for (int i = 0; i < rankData.Length; i++)
             {
-                t.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / 5f));
+                if (rankData[i].Title == titles[i]) continue;
+
+                rankData[i].Title = titles[i];
+                rankings[i]?.Invalidate();
             }
-
-            // En-têtes
-            string[] hdr = { "RANG", "ÉQUIPE", "PTS", "DIFF" };
-            foreach (var h in hdr)
-                t.Controls.Add(CreateRankingCell(h, true));
-
-            // Lignes d'équipes
-            string[] names = { "ÉQUIPE 1", "ÉQUIPE 2", "ÉQUIPE 3", "ÉQUIPE 4" };
-            for (int i = 0; i < names.Length; i++)
-            {
-                t.Controls.Add(CreateRankingCell((i + 1).ToString()));
-                t.Controls.Add(CreateRankingCell(names[i]));
-                t.Controls.Add(CreateRankingCell("0"));
-                t.Controls.Add(CreateRankingCell("0"));
-            }
-
-            p.Controls.Add(t);
-            return p;
         }
 
+        /// <summary>Ranking of one pool (rows in ranking order).</summary>
+        public void SetRankingText(int index, string[] TeamNames, string[] TeamDiffs, string[] TeamPoints)
+        {
+            if (index < 0 || index >= rankData.Length) return;
 
-        /// --------------------------------------------
-        /// Creates a cell label for the ranking table.
-        /// hdr indicates whether it is a header.
-        /// --------------------------------------------
-        private Label CreateRankingCell(string txt, bool hdr = false) =>
-            new Label
-            {
-                Text = txt,
-                Font = new Font("Segoe UI", hdr ? 9 : 8, hdr ? FontStyle.Bold : FontStyle.Regular),
-                ForeColor = Color.White,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Dock = DockStyle.Fill
-            };
+            RankData d = rankData[index];
+            d.Names = (string[])TeamNames.Clone();
+            d.Diffs = (string[])TeamDiffs.Clone();
+            d.Points = (string[])TeamPoints.Clone();
+            rankings[index]?.Invalidate();
+        }
 
-        /// --------------------------------------------------------
-        /// Updates all ranking panel names using a provided array.
-        /// --------------------------------------------------------
+        /// <summary>Sets all team names (16, pool by pool).</summary>
         public void UpdateRankingTeamNames(string[] teamNames)
         {
-            for (int panelIndex = 0; panelIndex < rankingPanels.Length; panelIndex++)
+            for (int p = 0; p < rankData.Length; p++)
             {
-                var panel = rankingPanels[panelIndex];
-                if (panel == null) continue;
-
-                var table = panel.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
-                if (table == null) continue;
-
-                for (int teamIndex = 0; teamIndex < 4; teamIndex++)
+                for (int t = 0; t < 4; t++)
                 {
-                    int controlIndex = (teamIndex + 1) * 4 + 1;
-                    if (controlIndex >= table.Controls.Count) continue;
-
-                    var lbl = table.Controls[controlIndex] as Label;
-                    if (lbl != null)
-                    {
-                        int globalTeamIndex = panelIndex * 4 + teamIndex;
-                        if (globalTeamIndex < teamNames.Length)
-                        {
-                            lbl.Text = teamNames[globalTeamIndex];
-                        }
-                    }
+                    int global = p * 4 + t;
+                    if (global < teamNames.Length) rankData[p].Names[t] = teamNames[global];
                 }
+                rankings[p]?.Invalidate();
             }
         }
 
-        /// -------------------------------------------
-        /// Updates all occurrences of a team name in:
-        /// - Court labels
-        /// - Next match panels
-        /// - Ranking tables
-        /// -------------------------------------------
         public void UpdateTeamNameInMatches(string oldName, string newName)
         {
             Tournament.Instance.RefreshAll();
         }
 
         /// ---------------------------------------------------------
-        /// Updates a specific bracket block's team names and scores.
-        /// Automatically updates winner panel if applicable.
+        /// Updates one bracket match (names and scores). The special
+        /// slots "P_WINNER" / "C_WINNER" set the winner box.
         /// ---------------------------------------------------------
         public void UpdateBracketBlock(string blockKey, string teamA, int scoreA, int scoreB, string teamB)
         {
-            if (!bracketBlocks.TryGetValue(blockKey, out var blockPanel)) return;
+            if (string.IsNullOrEmpty(blockKey)) return;
 
-            bool isWinner = blockPanel.BackColor == Color.Gold;
-
-            if (isWinner)
+            if (blockKey.EndsWith("_WINNER"))
             {
-                var label = blockPanel.Controls.OfType<Label>().FirstOrDefault();
-                if (label != null)
-                {
-                    label.Text = "🏆 " + teamA.ToUpper(); 
-                }
+                champions[blockKey.Substring(0, 1)] = teamA;
             }
             else
             {
-                var fullTextPanel = blockPanel.Controls.OfType<Panel>().FirstOrDefault();
-                if (fullTextPanel != null)
+                BracketMatch m;
+                if (!bracketData.TryGetValue(blockKey, out m))
                 {
-                    var label = fullTextPanel.Controls.OfType<Label>().FirstOrDefault();
-                    if (label != null)
-                    {
-                        label.Text = $"{teamA} - {scoreA} / {scoreB} - {teamB}";
-                    }
+                    m = new BracketMatch();
+                    bracketData[blockKey] = m;
                 }
-            }
-        }
 
-        /// ---------------------------------------------------
-        /// Builds a single bracket half (main or consolation)
-        /// starting at a given position, with a prefix for
-        /// identifying panels in the dictionary.
-        /// ---------------------------------------------------
-        private void BuildBracket(int startX, int startY, string prefix)
-        {
-            int panelW = 220, panelH = 40, hSpacing = 120, vSpacing = 60;
-
-            var bracketContainer = new Panel
-            {
-                Location = new Point(startX, startY),
-                Size = new Size(panelW * 4 + hSpacing * 3, 400),
-                BackColor = Color.Transparent
-            };
-            Controls.Add(bracketContainer);
-
-            List<Point> qCenters = new List<Point>();
-            List<Point> sCenters = new List<Point>();
-            Point fCenter = Point.Empty, wCenter = Point.Empty;
-
-            for (int i = 0; i < 4; i++)
-            {
-                int x = i * (panelW + hSpacing);
-                int y = 3 * (panelH + vSpacing);
-                var panel = CreateBracketBlock("ÉQUIPE 1", 0, 0, "ÉQUIPE 2", panelW, panelH);
-                panel.Location = new Point(x, y);
-                bracketBlocks[$"{prefix}_QF{i + 1}"] = panel;
-                bracketContainer.Controls.Add(panel);
-                qCenters.Add(GetPanelCenter(panel));
+                m.TeamA = teamA;
+                m.TeamB = teamB;
+                m.ScoreA = scoreA;
+                m.ScoreB = scoreB;
             }
 
-            for (int i = 0; i < 2; i++)
-            {
-                int x = i * 2 * (panelW + hSpacing) + (panelW + hSpacing) / 2;
-                int y = 2 * (panelH + vSpacing);
-                var panel = CreateBracketBlock("ÉQUIPE 1", 0, 0, "ÉQUIPE 2", panelW, panelH);
-                panel.Location = new Point(x, y);
-                bracketBlocks[$"{prefix}_SF{i + 1}"] = panel;
-                bracketContainer.Controls.Add(panel);
-                sCenters.Add(GetPanelCenter(panel));
-            }
-
-            int finalX = (panelW + hSpacing) + (panelW + hSpacing) / 2;
-            int finalY = panelH + vSpacing;
-            var final = CreateBracketBlock("ÉQUIPE 1", 0, 0, "ÉQUIPE 2", panelW, panelH);
-            final.Location = new Point(finalX, finalY);
-            bracketBlocks[$"{prefix}_FINAL"] = final;
-            bracketContainer.Controls.Add(final);
-            fCenter = GetPanelCenter(final);
-
-            int extraX = finalX + panelW + hSpacing;
-            int extraY = finalY;
-            var extra = CreateBracketBlock("ÉQUIPE 1", 0, 0, "ÉQUIPE 2", panelW, panelH);
-            extra.Location = new Point(extraX, extraY);
-            bracketBlocks[$"{prefix}_3RD"] = extra;
-            bracketContainer.Controls.Add(extra);
-
-            var winner = CreateBracketBlock("ÉQUIPE 1", 0, 0, "ÉQUIPE 2", panelW, panelH, true);
-            winner.Location = new Point(finalX, 0);
-            bracketBlocks[$"{prefix}_WINNER"] = winner;
-            bracketContainer.Controls.Add(winner);
-            wCenter = GetPanelCenter(winner);
-
-            bracketContainer.Paint += (s, e) =>
-            {
-                Pen pen = new Pen(Color.White, 2);
-                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-
-                e.Graphics.DrawLine(pen, qCenters[0], sCenters[0]);
-                e.Graphics.DrawLine(pen, qCenters[1], sCenters[0]);
-                e.Graphics.DrawLine(pen, qCenters[2], sCenters[1]);
-                e.Graphics.DrawLine(pen, qCenters[3], sCenters[1]);
-
-                e.Graphics.DrawLine(pen, sCenters[0], fCenter);
-                e.Graphics.DrawLine(pen, sCenters[1], fCenter);
-
-                e.Graphics.DrawLine(pen, fCenter, wCenter);
-            };
-        }
-
-        /// ---------------------------------------------------
-        /// Creates a single bracket block panel displaying
-        /// team names, scores, and optionally a winner trophy.
-        /// Supports editing team names via click.
-        /// ---------------------------------------------------
-        private Panel CreateBracketBlock(string teamA, int scoreA, int scoreB, string teamB, int w = 200, int h = 60, bool winner = false)
-        {
-            var panel = new Panel
-            {
-                Size = new Size(w, h),
-                BackColor = winner ? Color.Gold : Color.FromArgb(243, 167, 18),
-                BorderStyle = BorderStyle.FixedSingle
-            };
-
-            if (winner)
-            {
-                string currentName = "Winner";
-
-                var winLabel = new Label
-                {
-                    Text = "🏆 " + currentName.ToUpper(),
-                    Dock = DockStyle.Fill,
-                    Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                    ForeColor = Color.Black,
-                    TextAlign = ContentAlignment.MiddleCenter,
-                    Cursor = Cursors.Hand
-                };
-
-                winLabel.Click += (s, e) =>
-                {
-                    using (var dlg = new TextInputDialog("Éditer le nom du gagnant", "Modifier le nom de l'équipe gagnante :", currentName))
-                    {
-                        if (dlg.ShowDialog() == DialogResult.OK)
-                        {
-                            currentName = dlg.InputText.Trim();
-                            winLabel.Text = "🏆 " + currentName.ToUpper();
-                        }
-                    }
-                };
-
-                panel.Controls.Add(winLabel);
-                return panel;
-            }
-
-            var fullTextPanel = new Panel
-            {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(5),
-                BackColor = Color.Transparent
-            };
-
-            var label = new Label
-            {
-                Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                ForeColor = Color.Black,
-                TextAlign = ContentAlignment.MiddleCenter,
-                Text = $"{teamA} - {scoreA} / {scoreB} - {teamB}",
-                AutoEllipsis = true,
-                Cursor = Cursors.Hand
-            };
-
-            label.Click += (s, e) =>
-            {
-                int clickX = ((MouseEventArgs)e).X;
-
-                if (clickX < panel.Width / 2)
-                {
-                    using (var dlg = new TextInputDialog("Éditer le nom", "Modifier le nom de l'équipe A :", teamA))
-                    {
-                        if (dlg.ShowDialog() == DialogResult.OK)
-                        {
-                            teamA = dlg.InputText.Trim();
-                            label.Text = $"{teamA} - {scoreA} / {scoreB} - {teamB}";
-                        }
-                    }
-                }
-                else
-                {
-                    using (var dlg = new TextInputDialog("Éditer le nom", "Modifier le nom de l'équipe B :", teamB))
-                    {
-                        if (dlg.ShowDialog() == DialogResult.OK)
-                        {
-                            teamB = dlg.InputText.Trim();
-                            label.Text = $"{teamA} - {scoreA} / {scoreB} - {teamB}";
-                        }
-                    }
-                }
-            };
-
-            fullTextPanel.Controls.Add(label);
-            panel.Controls.Add(fullTextPanel);
-
-            return panel;
-        }
-
-        /// ----------------------------------------------
-        /// Returns the center point of a panel, used for
-        /// drawing connector lines in the bracket.
-        /// ----------------------------------------------
-        private Point GetPanelCenter(Panel panel)
-        {
-            return new Point(panel.Left + panel.Width / 2, panel.Top + panel.Height / 2);
-        }
-
-        /// -------------------------------------------------
-        /// Update the current referee name on corresponding
-        /// field.
-        /// -------------------------------------------------
-        public void UpdateReferee(int courtIndex, string refereeName)
-        {
-            // Sécurité : éviter les erreurs d'index
-            if (courtIndex < 0 || courtIndex >= refereeLabels.Length)
-                return;
-
-            // Si le label existe déjà, on met simplement à jour le texte
-            if (refereeLabels[courtIndex] != null)
-            {
-                refereeLabels[courtIndex].Text = $"Arbitre : \r\n{refereeName ?? "-"}";
-            }
+            bracket?.Invalidate();
         }
 
         #endregion
-
-        #endregion
-
-        #region ---- Getters & Setters ----
-
-        /// --------------------------------------------------
-        /// Updates the court labels for a given match index.
-        /// --------------------------------------------------
-        public void SetFieldText(int idx, string t1, string t2, string s1, string s2)
-        {
-            if (idx < 0 || idx >= courtLabels.Length || courtLabels[idx] == null) return;
-
-            courtLabels[idx][0].Text = t1;
-            courtLabels[idx][1].Text = t2;
-            courtLabels[idx][2].Text = s1;
-            courtLabels[idx][3].Text = s2;
-        }
-
-        /// ----------------------------------------------------
-        /// Updates the next match panel text at a given index.
-        /// ----------------------------------------------------
-        public void SetNextMatchText(int idx, string t1, string t2, string refName)
-        {
-            if (idx < 0 || idx >= matchPanels.Length || matchPanels[idx] == null) return;
-
-            ((Label)matchPanels[idx].Controls[0]).Text =
-                $"PROCHAIN MATCH\n{t1} VS {t2}\n📢 {refName ?? "-"}";
-        }
-
-        /// ------------------------------------------------------------
-        /// Updates the countdown timer display in minutes and seconds.
-        /// ------------------------------------------------------------
-        public void SetTimerText(float seconds)
-        {
-            int m = (int)(seconds / 60), s = (int)(seconds % 60);
-            if (timerValue != null) timerValue.Text = $"{m:D2}:{s:D2}";
-        }
-
-        /// ----------------------------------------------------
-        /// Updates the ranking table for a specific panel with
-        /// team names, points, and difference values.
-        /// ----------------------------------------------------
-        public void SetRankingText(int index, string[] TeamNames, string[] TeamDiffs, string[] TeamPoints)
-        {
-            if (index < 0 || index >= rankingPanels.Length) return;
-            var panel = rankingPanels[index];
-            if (panel == null) return;
-
-            var table = panel.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
-            if (table == null) return;
-
-            for (int teamIndex = 0; teamIndex < 4; teamIndex++)
-            {
-                int baseIndex = 4 + teamIndex * 4;
-
-                if (baseIndex + 3 >= table.Controls.Count) continue;
-
-                if (teamIndex < TeamNames.Length)
-                {
-                    var nameLabel = table.Controls[baseIndex + 1] as Label;
-                    if (nameLabel != null)
-                        nameLabel.Text = TeamNames[teamIndex];
-                }
-
-                if (teamIndex < TeamPoints.Length)
-                {
-                    var pointsLabel = table.Controls[baseIndex + 2] as Label;
-                    if (pointsLabel != null)
-                        pointsLabel.Text = TeamPoints[teamIndex];
-                }
-
-                if (teamIndex < TeamDiffs.Length)
-                {
-                    var diffLabel = table.Controls[baseIndex + 3] as Label;
-                    if (diffLabel != null)
-                        diffLabel.Text = TeamDiffs[teamIndex];
-                }
-            }
-        }
-
-        public Label[][] CourtLabels => courtLabels;
-
-        #endregion 
     }
 }

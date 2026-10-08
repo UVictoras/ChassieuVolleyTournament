@@ -47,6 +47,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AppPaths.cs" />
+    <Compile Include="DisplayControls.cs" />
     <Compile Include="DisplayWindow.cs">
       <SubType>Form</SubType>
     </Compile>
